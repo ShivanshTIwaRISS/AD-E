@@ -16,5 +16,11 @@ module.exports = function(callback) {
         if (data[0] === 0x0d) {
             callback("ENTER");
         }
+        if (data[0] === 0x6e || data[0] === 0x4e) {
+            callback("NEXT");
+        }
+        if (data[0] === 0x70 || data[0] === 0x50) {
+            callback("PREV");
+        }
     });
 };
