@@ -274,3 +274,198 @@ function playCurrentSong() {
 * Use `process.on("SIGINT")` to intercept Ctrl+C for graceful cleanup
 * Hex values for ASCII keys: `n` = `0x6e`, `p` = `0x70`
 * Refactoring repeated logic into helper functions keeps handlers clean
+
+# AD-6: CLI Music Player — Progress Bar & Playback Tracking
+
+## Topics Covered
+
+* Playback Progress Tracking
+* Timers using `setInterval()`
+* CLI Progress Bar Rendering
+* Time Formatting
+* Dynamic Terminal Updates
+* Process Cleanup
+
+## What We Added
+
+### New Feature: Playback Progress Bar
+
+Added a real-time progress bar while a song is playing.
+
+Example:
+
+```text
+🎵 CLI Music Player
+-------------------
+Playing: song.mp3
+
+[██████████████░░░░░░░░░░░░░░] 48%
+
+1:26 / 3:00
+```
+
+The progress bar updates every second and displays:
+
+* Current playback time
+* Total duration
+* Completion percentage
+
+---
+
+## Progress Tracking Variables
+
+```javascript
+let progressInterval = null;
+let currentDuration = 180;
+let currentTime = 0;
+```
+
+These variables are used to:
+
+* Track elapsed playback time
+* Store song duration
+* Manage progress updates
+
+---
+
+## Time Formatting
+
+Created a helper function to convert seconds into `MM:SS` format.
+
+```javascript
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+```
+
+Example:
+
+```text
+65 seconds → 1:05
+125 seconds → 2:05
+```
+
+---
+
+## Progress Bar Rendering
+
+A visual progress bar is generated using filled and empty blocks.
+
+```javascript
+const bar =
+    "█".repeat(filled) +
+    "░".repeat(width - filled);
+```
+
+The bar length changes according to playback progress.
+
+---
+
+## Dynamic Screen Updates
+
+The terminal screen is refreshed every second.
+
+```javascript
+setInterval(() => {
+    currentTime++;
+    drawProgress();
+}, 1000);
+```
+
+This creates the effect of a live updating media player.
+
+---
+
+## Process Cleanup
+
+The progress timer is stopped whenever:
+
+* A new song starts
+* The current song ends
+* The application exits
+
+```javascript
+clearInterval(progressInterval);
+```
+
+This prevents multiple timers from running simultaneously.
+
+---
+
+## Updated Playback Flow
+
+```text
+User Presses Enter
+        ↓
+Play Song
+        ↓
+Start Progress Timer
+        ↓
+Update Progress Every Second
+        ↓
+Song Ends / User Changes Song
+        ↓
+Stop Timer
+        ↓
+Return To Menu
+```
+
+---
+
+## Files Modified
+
+### `AD-3/songs/cli_player.js`
+
+Added:
+
+* Progress tracking variables
+* Progress bar renderer
+* Time formatter
+* Progress timer logic
+* Cleanup of active timers
+
+No changes were required in:
+
+### `AD-4/raw_io.js`
+
+Keyboard handling remains unchanged.
+
+---
+
+## Learning Outcomes
+
+* Using `setInterval()` for periodic updates
+* Building live-updating terminal interfaces
+* Creating CLI progress bars
+* Formatting time for user-friendly output
+* Managing timer lifecycles
+* Preventing resource leaks with proper cleanup
+
+---
+
+## Current Controls
+
+| Key | Action |
+|------|---------|
+| ↑ Up Arrow | Move selection up |
+| ↓ Down Arrow | Move selection down |
+| Enter | Play selected song |
+| n | Next song |
+| p | Previous song |
+| Ctrl + C | Exit and stop audio |
+
+---
+
+## Applications
+
+The same progress tracking approach can be used in:
+
+* CLI Music Players
+* Video Players
+* Download Managers
+* File Copy Utilities
+* Build Tools
+* Terminal Dashboards

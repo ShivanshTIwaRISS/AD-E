@@ -9,12 +9,17 @@ const SONGS_DIR = __dirname;
 let songs = [];
 let currentIndex = 0;
 let currentSongProcess = null;
+let progressInterval = null;
+let currentDuration = 0;
+let currentTime = 0;
 
 function stopSong() {
     if (currentSongProcess) {
         currentSongProcess.kill();
         currentSongProcess = null;
     }
+
+    clearInterval(progressInterval);
 }
 
 // Ensure audio stops when Node exits
@@ -63,21 +68,35 @@ function renderSongs() {
 }
 // Play Song
 function playSong(songPath) {
+
     stopSong();
-    currentSongProcess = spawn("afplay", [songPath]);
+
+    currentDuration = 180; // assume 3 min
+
+    currentSongProcess = spawn(
+        "afplay",
+        [songPath]
+    );
+
+    startProgress();
+
     currentSongProcess.on("close", () => {
+
+        clearInterval(progressInterval);
+
         currentSongProcess = null;
+
+        renderSongs();
     });
 }
 
 function playCurrentSong() {
-    const songPath = path.join(SONGS_DIR, songs[currentIndex]);
-    console.clear();
-    console.log(`Playing: ${songs[currentIndex]}\n`);
+    const songPath = path.join(
+        SONGS_DIR,
+        songs[currentIndex]
+    );
+
     playSong(songPath);
-    setTimeout(() => {
-        renderSongs();
-    }, 1000);
 }
 
 // Start
@@ -119,3 +138,79 @@ listenKeys((key) => {
         playCurrentSong();
     }
 });
+
+function getDuration(songPath, callback) {
+    const ffprobe = spawn("ffprobe", [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        songPath
+    ]);
+
+    let output = "";
+
+    ffprobe.stdout.on("data", (data) => {
+        output += data.toString();
+    });
+
+    ffprobe.on("close", () => {
+        callback(Math.floor(parseFloat(output)));
+    });
+}
+
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
+function drawProgress() {
+    const width = 30;
+
+    const percent =
+        currentDuration > 0
+            ? currentTime / currentDuration
+            : 0;
+
+    const filled = Math.floor(width * percent);
+
+    const bar =
+        "█".repeat(filled) +
+        "░".repeat(width - filled);
+
+    console.clear();
+
+    console.log("🎵 CLI Music Player");
+    console.log("-------------------");
+    console.log(`Playing: ${songs[currentIndex]}\n`);
+
+    console.log(
+        `[${bar}] ${Math.floor(percent * 100)}%`
+    );
+
+    console.log(
+        `${formatTime(currentTime)} / ${formatTime(currentDuration)}`
+    );
+}
+
+function startProgress() {
+    clearInterval(progressInterval);
+
+    currentTime = 0;
+
+    drawProgress();
+
+    progressInterval = setInterval(() => {
+        currentTime++;
+
+        drawProgress();
+
+        if (currentTime >= currentDuration) {
+            clearInterval(progressInterval);
+        }
+    }, 1000);
+}
