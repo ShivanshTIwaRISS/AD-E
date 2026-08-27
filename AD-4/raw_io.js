@@ -1,4 +1,6 @@
-process.stdin.setRawMode(true);
+if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+}
 process.stdin.resume();
 module.exports = function(callback) {
     process.stdin.on("data", (data) => {
@@ -21,6 +23,9 @@ module.exports = function(callback) {
         }
         if (data[0] === 0x70 || data[0] === 0x50) {
             callback("PREV");
+        }
+        if (data[0] === 0x20) {
+            callback("SPACE");
         }
     });
 };

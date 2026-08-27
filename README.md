@@ -469,3 +469,74 @@ The same progress tracking approach can be used in:
 * File Copy Utilities
 * Build Tools
 * Terminal Dashboards
+
+---
+
+# AD-7: CLI Music Player — Refinement Challenge
+
+## Topics Covered
+
+* Advanced State Management (Navigation selection vs. Playback tracking)
+* In-place redrawing using ANSI Escape Sequences (`\x1b[H\x1b[J`)
+* Signal-based Process Control (`SIGSTOP` & `SIGCONT`)
+* Defensive Raw Mode input checking (`process.stdin.isTTY`)
+* Integration of `ffprobe` for Dynamic Metadata query
+* Kernel-level Process Termination (`SIGKILL` vs `SIGTERM`)
+
+## What We Refined
+
+An interactive terminal-based music player dashboard that:
+
+* **Clamps Selection**: Prevents moving the menu highlight cursor above the first song or below the last song.
+* **In-place Redrawing**: Writes directly over the current output without scrolling or flickering.
+* **Pause / Resume**: Toggles the audio output using the Spacebar, freezing/unfreezing the progress bar.
+* **Real Song Duration**: Dynamically queries the MP3 duration instead of assuming a default value.
+* **Graceful Exit**: Instantly terminates active and paused processes on exit to prevent resource leakage.
+
+## Code Examples
+
+### Spacebar Capture in `raw_io.js`
+```javascript
+if (data[0] === 0x20) {
+    callback("SPACE");
+}
+```
+
+### Pause/Resume Process Handling in `cli_player.js`
+```javascript
+if (isPaused) {
+    currentSongProcess.kill("SIGCONT");
+    isPaused = false;
+    startProgress();
+} else {
+    currentSongProcess.kill("SIGSTOP");
+    isPaused = true;
+    clearInterval(progressInterval);
+    renderSongs();
+}
+```
+
+### Kernel-level Cleanup
+```javascript
+function stopSong() {
+    if (currentSongProcess) {
+        currentSongProcess.kill("SIGKILL");
+        currentSongProcess = null;
+    }
+    clearInterval(progressInterval);
+    isPaused = false;
+    playingIndex = -1;
+}
+```
+
+## Refined Controls Reference
+
+| Key          | Action                              |
+|--------------|-------------------------------------|
+| ↑ Up Arrow   | Move selection up (clamped)         |
+| ↓ Down Arrow | Move selection down (clamped)       |
+| Enter        | Play selected song                  |
+| Spacebar     | Pause / Resume song                 |
+| `n`          | Skip to next song (wrapped)         |
+| `p`          | Skip to previous song (wrapped)     |
+| Ctrl + C     | Exit and clean up all processes     |
