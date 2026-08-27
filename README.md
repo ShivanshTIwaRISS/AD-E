@@ -476,14 +476,15 @@ The same progress tracking approach can be used in:
 
 ## Topics Covered
 
-* Advanced State Management (Navigation selection vs. Playback tracking)
+* Advanced State Management (Navigation selection, Playback index, Loop and Shuffle states)
 * In-place redrawing using ANSI Escape Sequences (`\x1b[H\x1b[J`)
 * Signal-based Process Control (`SIGSTOP` & `SIGCONT`)
 * Defensive Raw Mode input checking (`process.stdin.isTTY`)
 * Integration of `ffprobe` for Dynamic Metadata query
 * Kernel-level Process Termination (`SIGKILL` vs `SIGTERM`)
+* ASCII Character Animation synchronised with progress intervals
 
-## What We Refined
+## What We Refined & Enhanced
 
 An interactive terminal-based music player dashboard that:
 
@@ -492,13 +493,23 @@ An interactive terminal-based music player dashboard that:
 * **Pause / Resume**: Toggles the audio output using the Spacebar, freezing/unfreezing the progress bar.
 * **Real Song Duration**: Dynamically queries the MP3 duration instead of assuming a default value.
 * **Graceful Exit**: Instantly terminates active and paused processes on exit to prevent resource leakage.
+* **Loop Toggle**: Press `l`/`L` to switch loop modes: `Off` (plays straight through), `Single` (repeats current track), or `All` (repeats the entire list).
+* **Shuffle Toggle**: Press `s`/`S` to play tracks in random order.
+* **Visual Seeking**: Press Left/Right Arrow keys to jump backward/forward 10 seconds (with visual progress changes and seeking notifications).
+* **Dancing ASCII Animation**: Displays animated ASCII art characters (🕺 Boy, 💃 Girl, 🐱 Cat) side-by-side that dance to the music when playing and go to sleep when paused.
 
 ## Code Examples
 
-### Spacebar Capture in `raw_io.js`
+### Spacebar Capture & Extended Keys in `raw_io.js`
 ```javascript
 if (data[0] === 0x20) {
     callback("SPACE");
+}
+if (data[0] === 0x6c || data[0] === 0x4c) {
+    callback("LOOP");
+}
+if (data[0] === 0x73 || data[0] === 0x53) {
+    callback("SHUFFLE");
 }
 ```
 
@@ -516,27 +527,33 @@ if (isPaused) {
 }
 ```
 
-### Kernel-level Cleanup
+### ASCII Dancer Frames (Changing every second)
 ```javascript
-function stopSong() {
-    if (currentSongProcess) {
-        currentSongProcess.kill("SIGKILL");
-        currentSongProcess = null;
-    }
-    clearInterval(progressInterval);
-    isPaused = false;
-    playingIndex = -1;
-}
+const DANCE_FRAMES = [
+    [
+        "  (•_•)      (❛‿❛)      /\\_/\\  ",
+        "  <) )>      /👗\\     ( o.o ) ~🐾",
+        "  /   \\      /   \\     > ^ <   "
+    ],
+    [
+        "  (•_•)      (❛‿❛)      /\\_/\\  ",
+        "  \\( )/      \\👗/     ( =.= ) 🐾~",
+        "  /   \\      /   \\     > ^ <   "
+    ]
+];
 ```
 
 ## Refined Controls Reference
 
-| Key          | Action                              |
-|--------------|-------------------------------------|
-| ↑ Up Arrow   | Move selection up (clamped)         |
-| ↓ Down Arrow | Move selection down (clamped)       |
-| Enter        | Play selected song                  |
-| Spacebar     | Pause / Resume song                 |
-| `n`          | Skip to next song (wrapped)         |
-| `p`          | Skip to previous song (wrapped)     |
-| Ctrl + C     | Exit and clean up all processes     |
+| Key          | Action                                                    |
+|--------------|-----------------------------------------------------------|
+| ↑ Up Arrow   | Move selection up (clamped)                               |
+| ↓ Down Arrow | Move selection down (clamped)                             |
+| Enter        | Play selected song                                        |
+| Spacebar     | Pause / Resume song                                       |
+| `n`          | Skip to next song (wrapped/shuffle-aware)                 |
+| `p`          | Skip to previous song (wrapped/shuffle-aware)             |
+| `l`          | Toggle loop mode (`Off` -> `🔂 Single` -> `🔁 All`)       |
+| `s`          | Toggle shuffle mode (`Off` / `🔀 On`)                    |
+| ← / → Arrows | Seek 10 seconds backward/forward (visually)              |
+| Ctrl + C     | Exit and clean up all processes                           |

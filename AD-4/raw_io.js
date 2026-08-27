@@ -14,6 +14,12 @@ module.exports = function(callback) {
             if (data[2] === 0x42) {
                 callback("DOWN");
             }
+            if (data[2] === 0x43) {
+                callback("RIGHT");
+            }
+            if (data[2] === 0x44) {
+                callback("LEFT");
+            }
         }
         if (data[0] === 0x0d) {
             callback("ENTER");
@@ -26,6 +32,12 @@ module.exports = function(callback) {
         }
         if (data[0] === 0x20) {
             callback("SPACE");
+        }
+        if (data[0] === 0x6c || data[0] === 0x4c) {
+            callback("LOOP");
+        }
+        if (data[0] === 0x73 || data[0] === 0x53) {
+            callback("SHUFFLE");
         }
     });
 };
