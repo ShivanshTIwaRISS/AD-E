@@ -209,6 +209,12 @@ function playSong(songPath) {
 
         currentSongProcess = spawn("afplay", [songPath]);
 
+        currentSongProcess.on("error", (err) => {
+            // Handle spawn error gracefully (e.g. if afplay is not found)
+            stopSong();
+            renderSongs();
+        });
+
         startProgress();
 
         currentSongProcess.on("close", () => {
@@ -378,17 +384,28 @@ function getDuration(songPath, callback) {
     ]);
 
     let output = "";
+    let hasCallbackBeenCalled = false;
+
+    ffprobe.on("error", (err) => {
+        if (!hasCallbackBeenCalled) {
+            hasCallbackBeenCalled = true;
+            callback(0);
+        }
+    });
 
     ffprobe.stdout.on("data", (data) => {
         output += data.toString();
     });
 
     ffprobe.on("close", () => {
-        const parsed = parseFloat(output);
-        if (isNaN(parsed)) {
-            callback(0);
-        } else {
-            callback(Math.floor(parsed));
+        if (!hasCallbackBeenCalled) {
+            hasCallbackBeenCalled = true;
+            const parsed = parseFloat(output);
+            if (isNaN(parsed)) {
+                callback(0);
+            } else {
+                callback(Math.floor(parsed));
+            }
         }
     });
 }
