@@ -162,54 +162,68 @@ function stopSong() {
 }
 
 // spawnPlayer: if startAt > 0, pipe audio from byte offset via tail | afplay -
-// afplay -t is a DURATION CAP (not a start offset), so we must NOT use it for seeking.
+// afplay -t is a DURATION CAP (not start offset) — never use it for seeking.
+// We spawn via 'sh -c' in its own process group so we can kill the whole group
+// (shell + afplay child) reliably. stdio:'ignore' keeps our terminal stdin free.
 function spawnPlayer(songPath, startAt) {
-    const vol = muted ? 0 : volume / 100;
+    const vol     = muted ? 0 : volume / 100;
     const volStr  = String(vol);
     const rateStr = String(speed);
 
     if (startAt > 0 && duration > 0) {
         try {
-            const stat = fs.statSync(songPath);
+            const stat       = fs.statSync(songPath);
             const byteOffset = Math.max(0, Math.floor((startAt / duration) * stat.size));
-            // tail -c +N outputs from byte N (1-indexed) to EOF; pipe to afplay reading stdin
+            // tail -c +N (1-indexed) → afplay reading from stdin
             const cmd = `tail -c +${byteOffset + 1} "${songPath}" | afplay -r ${rateStr} -v ${volStr} -`;
-            return spawn("sh", ["-c", cmd]);
-        } catch (_) { /* fall through to normal play */ }
+            const proc = spawn("sh", ["-c", cmd], {
+                detached: true,          // own process group → we can kill whole group
+                stdio: ["ignore", "ignore", "ignore"]  // don't steal terminal stdin
+            });
+            proc._isGroup = true;  // flag so kill logic uses process group
+            return proc;
+        } catch (_) { /* fall through */ }
     }
 
-    return spawn("afplay", ["-v", volStr, "-r", rateStr, songPath]);
+    return spawn("afplay", ["-v", volStr, "-r", rateStr, songPath], {
+        stdio: ["ignore", "ignore", "ignore"]
+    });
+}
+
+// Kill a player process: if it's a process group (seek spawn), kill the whole group
+function killPlayer(proc) {
+    if (!proc) return;
+    try {
+        if (proc._isGroup) {
+            process.kill(-proc.pid, "SIGKILL");  // negative pid = kill process group
+        } else {
+            proc.kill("SIGKILL");
+        }
+    } catch (_) {}
 }
 
 function playSong(idx, startAt) {
     if (idx < 0 || idx >= filtered.length) return;
 
-    // Kill any existing process first, synchronously
-    if (player) {
-        player.kill("SIGKILL");
-        player = null;
-    }
+    // Kill any existing process first
+    if (player) { killPlayer(player); player = null; }
     clearInterval(ticker);
     ticker = null;
 
-    cursorIdx = idx;
+    cursorIdx  = idx;
     playingIdx = idx;
-    paused = false;
-    elapsed = startAt || 0;
-    frame = 0;
+    paused     = false;
+    elapsed    = startAt || 0;
+    frame      = 0;
 
     const songPath = path.join(SONGS_DIR, filtered[idx]);
     if (!startAt) duration = parseMp3Duration(songPath);
 
     player = spawnPlayer(songPath, startAt || 0);
 
-    player.on("error", () => {
-        player = null;
-        draw();
-    });
-
+    player.on("error", () => { player = null; draw(); });
     player.on("close", (code, signal) => {
-        if (signal === "SIGKILL") return; // we killed it intentionally
+        if (signal === "SIGKILL") return;
         player = null;
         clearInterval(ticker);
         ticker = null;
@@ -217,11 +231,7 @@ function playSong(idx, startAt) {
     });
 
     ticker = setInterval(() => {
-        if (!paused) {
-            elapsed++;
-            frame++;
-            if (elapsed > duration) elapsed = duration;
-        }
+        if (!paused) { elapsed++; frame++; if (elapsed > duration) elapsed = duration; }
         draw();
     }, 1000);
 
@@ -234,7 +244,7 @@ function seekTo(newElapsed) {
     const target    = Math.max(0, Math.min(duration, newElapsed));
     const wasPaused = paused;
 
-    player.kill("SIGKILL");
+    killPlayer(player);
     player = null;
     clearInterval(ticker);
     ticker = null;
@@ -259,7 +269,13 @@ function seekTo(newElapsed) {
         draw();
     }, 1000);
 
-    if (wasPaused) { player.kill("SIGSTOP"); paused = true; }
+    if (wasPaused) {
+        try {
+            if (player._isGroup) process.kill(-player.pid, "SIGSTOP");
+            else player.kill("SIGSTOP");
+        } catch (_) {}
+        paused = true;
+    }
     draw();
 }
 
@@ -292,10 +308,16 @@ function handleSongEnd() {
 function togglePause() {
     if (!player) { playSong(cursorIdx); return; }
     if (paused) {
-        player.kill("SIGCONT");
+        try {
+            if (player._isGroup) process.kill(-player.pid, "SIGCONT");
+            else player.kill("SIGCONT");
+        } catch (_) {}
         paused = false;
     } else {
-        player.kill("SIGSTOP");
+        try {
+            if (player._isGroup) process.kill(-player.pid, "SIGSTOP");
+            else player.kill("SIGSTOP");
+        } catch (_) {}
         paused = true;
     }
     draw();
@@ -331,19 +353,19 @@ function prevSong() {
 
 function restartPlayerInPlace() {
     if (!player || playingIdx === -1) return;
-    const idx = playingIdx;
+    const idx          = playingIdx;
     const savedElapsed = elapsed;
-    const savedDuration = duration;
-    const wasPaused = paused;
+    const savedDuration= duration;
+    const wasPaused    = paused;
 
-    player.kill("SIGKILL");
+    killPlayer(player);
     player = null;
     clearInterval(ticker);
     ticker = null;
 
-    elapsed = savedElapsed;
+    elapsed  = savedElapsed;
     duration = savedDuration;
-    paused = false;
+    paused   = false;
 
     const songPath = path.join(SONGS_DIR, filtered[idx]);
     player = spawnPlayer(songPath, savedElapsed);
@@ -362,7 +384,13 @@ function restartPlayerInPlace() {
         draw();
     }, 1000);
 
-    if (wasPaused) { player.kill("SIGSTOP"); paused = true; }
+    if (wasPaused) {
+        try {
+            if (player._isGroup) process.kill(-player.pid, "SIGSTOP");
+            else player.kill("SIGSTOP");
+        } catch(_) {}
+        paused = true;
+    }
 }
 
 function setVolume(v) {
@@ -505,7 +533,7 @@ listenKeys((key, arg) => {
     } else if (key === "SPEED") {
         cycleSpeed();
     } else if (key === "QUIT") {
-        if (player) player.kill("SIGKILL");
+        if (player) killPlayer(player);
         process.stdout.write("\x1b[?25h\n");
         process.exit(0);
     }
