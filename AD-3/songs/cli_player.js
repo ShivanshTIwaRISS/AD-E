@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const listenKeys = require("../../AD-4/raw_io");
 
 const SONGS_DIR = __dirname;
+const SEEK_TMP_FILE = `/tmp/.cli_player_seek_${process.pid}.mp3`;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let songs = [];
@@ -28,10 +29,19 @@ let notification = "";
 let notifTimer = null;
 let frame = 0;
 
-const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0, 3.0];
-const SPEED_LABELS = { 0.25: "0.25x 🐢", 0.5: "0.5x 🐌", 1.0: "1x ▶", 1.5: "1.5x ⚡", 2.0: "2x 🚀", 3.0: "3x 🔥" };
+const SPEEDS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+const SPEED_LABELS = {
+    0.25: "0.25x 🐢",
+    0.5:  "0.5x 🐌",
+    0.75: "0.75x 🚶",
+    1.0:  "1x ▶",
+    1.25: "1.25x ⚡",
+    1.5:  "1.5x 🚀",
+    2.0:  "2x 🔥",
+    3.0:  "3x ⚡🔥"
+};
 
-// ─── Animation frames (clean note bars) ───────────────────────────────────────
+// ─── Animation frames ─────────────────────────────────────────────────────────
 const BARS = [
     "▁▂▃▄▅▆▇█▇▆▅▄▃▂▁",
     "▂▃▄▅▆▇█▇▆▅▄▃▂▁▂",
@@ -44,10 +54,14 @@ const BARS = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const W = process.stdout.columns || 72;
-const LINE = "─".repeat(W - 2);
+function getTermWidth() {
+    return process.stdout.columns && process.stdout.columns > 30 ? process.stdout.columns : 72;
+}
 
-function fmt(s) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+function fmt(s) {
+    const sec = Math.max(0, Math.floor(s));
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+}
 
 function cleanName(f) {
     return f.replace(/\.mp3$/i, "").replace(/[_]/g, " ");
@@ -61,7 +75,16 @@ function notify(msg) {
 
 function out(line) { process.stdout.write(line + "\n"); }
 
+function cleanupSeekFile() {
+    try {
+        if (fs.existsSync(SEEK_TMP_FILE)) fs.unlinkSync(SEEK_TMP_FILE);
+    } catch (_) {}
+}
+
 function draw() {
+    const W = getTermWidth();
+    const LINE = "─".repeat(Math.max(10, W - 2));
+
     // Jump cursor to top-left, then wipe everything below
     process.stdout.write("\x1b[H\x1b[J");
 
@@ -70,27 +93,27 @@ function draw() {
 
     // Header
     out(`${C}┌${LINE}┐${X}`);
-    const title = `${B}${M}  🎵  MUSIC PLAYER CLI  🎵${X}`;
-    const volStr = muted ? `${R}MUTED${X}` : `${G}VOL ${volume}%${X}`;
+    const title = `${B}${M}🎵 MUSIC PLAYER CLI 🎵${X}`;
+    const volStr = muted ? `${R}🔇 MUTED${X}` : `${G}VOL ${volume}%${X}`;
     const loopStr = loopMode === "SINGLE" ? `${Y}🔂 ONE${X}` : loopMode === "ALL" ? `${Y}🔁 ALL${X}` : `${D}LOOP OFF${X}`;
     const shufStr = shuffle ? `${Y}🔀 ON${X}` : `${D}SHUF OFF${X}`;
     const spdStr = speed === 1.0 ? `${D}1x${X}` : speed > 1 ? `${G}${SPEED_LABELS[speed]}${X}` : `${Y}${SPEED_LABELS[speed]}${X}`;
-    out(`${C}│${X}  ${title}   ${loopStr}  ${shufStr}  ${spdStr}  ${volStr}  ${C}│${X}`);
+    out(`${C}│${X}  ${title}   ${loopStr}  ${shufStr}  ${spdStr}  ${volStr}`);
     out(`${C}├${LINE}┤${X}`);
 
     // Search bar
     if (searchMode || searchQuery) {
         const q = searchQuery + (searchMode ? "\x1b[5m█\x1b[25m" : "");
-        out(`${C}│${X}  🔍 Search: ${Y}${q}${X}  (${filtered.length} results)${C}│${X}`);
+        out(`${C}│${X}  🔍 Search: ${Y}${q}${X}  (${filtered.length} results)`);
         out(`${C}├${LINE}┤${X}`);
     }
 
     // Playlist
-    out(`${C}│${X}  ${D}PLAYLIST  (↑/↓ navigate · Enter play · n/p next/prev · ← /→ seek 5s · f speed · / search)${X}  ${C}│${X}`);
-    out(`${C}│${X}${C}│${X}`);
+    out(`${C}│${X}  ${D}PLAYLIST  (↑/↓ navigate · Enter play · n/p next/prev · ←/→ seek 5s · f speed · / search)${X}`);
+    out(`${C}│${X}`);
 
     if (filtered.length === 0) {
-        out(`${C}│${X}   ${D}  No songs found.${X}                                       ${C}│${X}`);
+        out(`${C}│${X}   ${D}  No songs found.${X}`);
     } else {
         filtered.forEach((song, i) => {
             const name = cleanName(song);
@@ -104,32 +127,32 @@ function draw() {
             if (isSelected && isPlaying) nameColor = G + "\x1b[1m";
             if (isSelected && !isPlaying) { icon = `${M}→ ${X}`; nameColor = M + "\x1b[1m"; }
 
-            const padded = name.length > W - 18 ? name.substring(0, W - 21) + "..." : name;
-            out(`${C}│${X}  ${num} ${icon}${nameColor}${padded}${X}${C}│${X}`);
+            const maxLen = Math.max(15, W - 18);
+            const padded = name.length > maxLen ? name.substring(0, maxLen - 3) + "..." : name;
+            out(`${C}│${X}  ${num} ${icon}${nameColor}${padded}${X}`);
         });
     }
 
-    out(`${C}│${X}${C}│${X}`);
+    out(`${C}│${X}`);
     out(`${C}├${LINE}┤${X}`);
 
     // Now playing dashboard
     if (playingIdx !== -1 && player && filtered[playingIdx]) {
         const name = cleanName(filtered[playingIdx]);
-        const pct = duration > 0 ? elapsed / duration : 0;
-        const barW = W - 16;
-        const filled = Math.floor(barW * pct);
-        const progressBar = `${G}${"█".repeat(filled)}${D}${"░".repeat(barW - filled)}${X}`;
+        const curElapsed = Math.min(duration, Math.max(0, Math.floor(elapsed)));
+        const pct = duration > 0 ? Math.min(1, curElapsed / duration) : 0;
+        const barW = Math.max(10, W - 18);
+        const filled = Math.min(barW, Math.floor(barW * pct));
+        const progressBar = `${G}${"█".repeat(filled)}${D}${"░".repeat(Math.max(0, barW - filled))}${X}`;
         const statusStr = paused ? `${Y}⏸  PAUSED${X}` : `${G}▶  PLAYING${X}`;
 
-        // Animated visualizer (only when playing)
+        // Animated visualizer
         const vizFrame = paused ? "▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁" : BARS[frame % BARS.length];
-        const viz = paused
-            ? `${D}${vizFrame}${X}`
-            : `${G}${vizFrame}${X}`;
+        const viz = paused ? `${D}${vizFrame}${X}` : `${G}${vizFrame}${X}`;
 
         out(`${C}│${X}  ${statusStr}   ${B}${M}${name}${X}`);
-        out(`${C}│${X}  ${viz}  ${viz}  ${viz}  ${viz}`);
-        out(`${C}│${X}  ${Y}${fmt(elapsed)}${X} ${progressBar} ${Y}${fmt(duration)}${X}  ${Math.floor(pct * 100)}%`);
+        out(`${C}│${X}  ${viz}  ${viz}  ${viz}`);
+        out(`${C}│${X}  ${Y}${fmt(curElapsed)}${X} ${progressBar} ${Y}${fmt(duration)}${X}  ${Math.floor(pct * 100)}%`);
     } else {
         out(`${C}│${X}  ${D}▶  Not playing · Select a song and press Enter${X}`);
         out(`${C}│${X}`);
@@ -147,65 +170,55 @@ function draw() {
 }
 
 // ─── Playback ─────────────────────────────────────────────────────────────────
-function stopSong() {
-    if (player) {
-        player.kill("SIGKILL");
-        player = null;
-    }
-    clearInterval(ticker);
-    ticker = null;
-    paused = false;
-    playingIdx = -1;
-    elapsed = 0;
-    duration = 0;
-    frame = 0;
-}
-
-// spawnPlayer: if startAt > 0, pipe audio from byte offset via tail | afplay -
-// afplay -t is a DURATION CAP (not start offset) — never use it for seeking.
-// We spawn via 'sh -c' in its own process group so we can kill the whole group
-// (shell + afplay child) reliably. stdio:'ignore' keeps our terminal stdin free.
 function spawnPlayer(songPath, startAt) {
-    const vol     = muted ? 0 : volume / 100;
-    const volStr  = String(vol);
+    const vol = muted ? 0 : volume / 100;
+    const volStr = String(vol);
     const rateStr = String(speed);
 
+    let fileToPlay = songPath;
     if (startAt > 0 && duration > 0) {
         try {
-            const stat       = fs.statSync(songPath);
-            const byteOffset = Math.max(0, Math.floor((startAt / duration) * stat.size));
-            // tail -c +N (1-indexed) → afplay reading from stdin
-            const cmd = `tail -c +${byteOffset + 1} "${songPath}" | afplay -r ${rateStr} -v ${volStr} -`;
-            const proc = spawn("sh", ["-c", cmd], {
-                detached: true,          // own process group → we can kill whole group
-                stdio: ["ignore", "ignore", "ignore"]  // don't steal terminal stdin
-            });
-            proc._isGroup = true;  // flag so kill logic uses process group
-            return proc;
-        } catch (_) { /* fall through */ }
+            const stat = fs.statSync(songPath);
+            const ratio = Math.min(0.99, Math.max(0, startAt / duration));
+            const byteOffset = Math.floor(ratio * stat.size);
+            const fullBuf = fs.readFileSync(songPath);
+            const sliceBuf = fullBuf.subarray(byteOffset);
+            fs.writeFileSync(SEEK_TMP_FILE, sliceBuf);
+            fileToPlay = SEEK_TMP_FILE;
+        } catch (_) {
+            fileToPlay = songPath;
+        }
     }
 
-    return spawn("afplay", ["-v", volStr, "-r", rateStr, songPath], {
+    return spawn("afplay", ["-v", volStr, "-r", rateStr, fileToPlay], {
         stdio: ["ignore", "ignore", "ignore"]
     });
 }
 
-// Kill a player process: if it's a process group (seek spawn), kill the whole group
 function killPlayer(proc) {
     if (!proc) return;
     try {
-        if (proc._isGroup) {
-            process.kill(-proc.pid, "SIGKILL");  // negative pid = kill process group
-        } else {
-            proc.kill("SIGKILL");
-        }
+        proc.kill("SIGKILL");
     } catch (_) {}
+}
+
+function startTicker() {
+    clearInterval(ticker);
+    ticker = setInterval(() => {
+        if (!paused && player) {
+            elapsed += 0.5 * speed;
+            frame++;
+            if (elapsed >= duration && duration > 0) {
+                elapsed = duration;
+            }
+            draw();
+        }
+    }, 500);
 }
 
 function playSong(idx, startAt) {
     if (idx < 0 || idx >= filtered.length) return;
 
-    // Kill any existing process first
     if (player) { killPlayer(player); player = null; }
     clearInterval(ticker);
     ticker = null;
@@ -221,27 +234,24 @@ function playSong(idx, startAt) {
 
     player = spawnPlayer(songPath, startAt || 0);
 
-    player.on("error", () => { player = null; draw(); });
+    player.on("error", () => { player = null; cleanupSeekFile(); draw(); });
     player.on("close", (code, signal) => {
         if (signal === "SIGKILL") return;
         player = null;
         clearInterval(ticker);
         ticker = null;
+        cleanupSeekFile();
         handleSongEnd();
     });
 
-    ticker = setInterval(() => {
-        if (!paused) { elapsed++; frame++; if (elapsed > duration) elapsed = duration; }
-        draw();
-    }, 1000);
-
+    startTicker();
     draw();
 }
 
 function seekTo(newElapsed) {
     if (!player || playingIdx === -1) return;
     const idx       = playingIdx;
-    const target    = Math.max(0, Math.min(duration, newElapsed));
+    const target    = Math.max(0, Math.min(duration, Math.round(newElapsed)));
     const wasPaused = paused;
 
     killPlayer(player);
@@ -255,100 +265,23 @@ function seekTo(newElapsed) {
     const songPath = path.join(SONGS_DIR, filtered[idx]);
     player = spawnPlayer(songPath, target);
 
-    player.on("error", () => { player = null; draw(); });
+    player.on("error", () => { player = null; cleanupSeekFile(); draw(); });
     player.on("close", (code, signal) => {
         if (signal === "SIGKILL") return;
         player = null;
         clearInterval(ticker);
         ticker = null;
+        cleanupSeekFile();
         handleSongEnd();
     });
 
-    ticker = setInterval(() => {
-        if (!paused) { elapsed++; frame++; if (elapsed > duration) elapsed = duration; }
-        draw();
-    }, 1000);
+    startTicker();
 
     if (wasPaused) {
-        try {
-            if (player._isGroup) process.kill(-player.pid, "SIGSTOP");
-            else player.kill("SIGSTOP");
-        } catch (_) {}
+        try { player.kill("SIGSTOP"); } catch (_) {}
         paused = true;
     }
     draw();
-}
-
-function handleSongEnd() {
-    if (loopMode === "SINGLE") {
-        playSong(playingIdx === -1 ? cursorIdx : playingIdx);
-        return;
-    }
-
-    const list = filtered.length > 0 ? filtered : songs;
-    const current = playingIdx;
-
-    let next;
-    if (shuffle) {
-        if (list.length <= 1) { next = 0; }
-        else {
-            do { next = Math.floor(Math.random() * list.length); } while (next === current);
-        }
-    } else {
-        next = current + 1;
-        if (next >= list.length) {
-            if (loopMode === "ALL") next = 0;
-            else { playingIdx = -1; draw(); return; }
-        }
-    }
-
-    playSong(next);
-}
-
-function togglePause() {
-    if (!player) { playSong(cursorIdx); return; }
-    if (paused) {
-        try {
-            if (player._isGroup) process.kill(-player.pid, "SIGCONT");
-            else player.kill("SIGCONT");
-        } catch (_) {}
-        paused = false;
-    } else {
-        try {
-            if (player._isGroup) process.kill(-player.pid, "SIGSTOP");
-            else player.kill("SIGSTOP");
-        } catch (_) {}
-        paused = true;
-    }
-    draw();
-}
-
-function nextSong() {
-    const current = player ? playingIdx : cursorIdx;
-    const list = filtered;
-    if (list.length === 0) return;
-
-    let next;
-    if (shuffle) {
-        do { next = Math.floor(Math.random() * list.length); } while (next === current && list.length > 1);
-    } else {
-        next = (current + 1) % list.length;
-    }
-    playSong(next);
-}
-
-function prevSong() {
-    const current = player ? playingIdx : cursorIdx;
-    const list = filtered;
-    if (list.length === 0) return;
-
-    let prev;
-    if (shuffle) {
-        do { prev = Math.floor(Math.random() * list.length); } while (prev === current && list.length > 1);
-    } else {
-        prev = (current - 1 + list.length) % list.length;
-    }
-    playSong(prev);
 }
 
 function restartPlayerInPlace() {
@@ -370,34 +303,110 @@ function restartPlayerInPlace() {
     const songPath = path.join(SONGS_DIR, filtered[idx]);
     player = spawnPlayer(songPath, savedElapsed);
 
-    player.on("error", () => { player = null; draw(); });
+    player.on("error", () => { player = null; cleanupSeekFile(); draw(); });
     player.on("close", (code, signal) => {
         if (signal === "SIGKILL") return;
         player = null;
         clearInterval(ticker);
         ticker = null;
+        cleanupSeekFile();
         handleSongEnd();
     });
 
-    ticker = setInterval(() => {
-        if (!paused) { elapsed++; frame++; if (elapsed > duration) elapsed = duration; }
-        draw();
-    }, 1000);
+    startTicker();
 
     if (wasPaused) {
-        try {
-            if (player._isGroup) process.kill(-player.pid, "SIGSTOP");
-            else player.kill("SIGSTOP");
-        } catch(_) {}
+        try { player.kill("SIGSTOP"); } catch (_) {}
         paused = true;
     }
+}
+
+function handleSongEnd() {
+    if (loopMode === "SINGLE") {
+        playSong(playingIdx === -1 ? cursorIdx : playingIdx);
+        return;
+    }
+
+    const list = filtered.length > 0 ? filtered : songs;
+    const current = playingIdx;
+
+    let next;
+    if (shuffle) {
+        if (list.length <= 1) { next = 0; }
+        else {
+            do { next = Math.floor(Math.random() * list.length); } while (next === current);
+        }
+    } else {
+        next = current + 1;
+        if (next >= list.length) {
+            if (loopMode === "ALL") next = 0;
+            else { playingIdx = -1; elapsed = 0; draw(); return; }
+        }
+    }
+
+    playSong(next);
+}
+
+function togglePause() {
+    if (!player) { playSong(cursorIdx); return; }
+    if (paused) {
+        try { player.kill("SIGCONT"); } catch (_) {}
+        paused = false;
+        notify("▶ Resumed");
+    } else {
+        try { player.kill("SIGSTOP"); } catch (_) {}
+        paused = true;
+        notify("⏸ Paused");
+    }
+    draw();
+}
+
+function nextSong() {
+    const list = filtered.length > 0 ? filtered : songs;
+    if (list.length === 0) return;
+    const current = player ? playingIdx : cursorIdx;
+
+    let next;
+    if (shuffle) {
+        if (list.length <= 1) { next = 0; }
+        else {
+            do { next = Math.floor(Math.random() * list.length); } while (next === current);
+        }
+    } else {
+        next = (current + 1) % list.length;
+    }
+    playSong(next);
+}
+
+function prevSong() {
+    const list = filtered.length > 0 ? filtered : songs;
+    if (list.length === 0) return;
+    const current = player ? playingIdx : cursorIdx;
+
+    let prev;
+    if (shuffle) {
+        if (list.length <= 1) { prev = 0; }
+        else {
+            do { prev = Math.floor(Math.random() * list.length); } while (prev === current);
+        }
+    } else {
+        prev = (current - 1 + list.length) % list.length;
+    }
+    playSong(prev);
 }
 
 function setVolume(v) {
     volume = Math.max(0, Math.min(100, v));
     muted = false;
     if (player) restartPlayerInPlace();
-    notify(`Volume: ${volume}%`);
+    notify(`🔊 Volume: ${volume}%`);
+    draw();
+}
+
+function toggleMute() {
+    muted = !muted;
+    if (player) restartPlayerInPlace();
+    notify(muted ? "🔇 MUTED" : `🔊 Volume: ${volume}%`);
     draw();
 }
 
@@ -405,7 +414,7 @@ function cycleSpeed() {
     const idx = SPEEDS.indexOf(speed);
     speed = SPEEDS[(idx + 1) % SPEEDS.length];
     if (player) restartPlayerInPlace();
-    notify(`Speed: ${SPEED_LABELS[speed]}`);
+    notify(`⚡ Speed: ${SPEED_LABELS[speed]}`);
     draw();
 }
 
@@ -420,8 +429,16 @@ function applyFilter() {
     draw();
 }
 
-// ─── MP3 Duration Parser (no ffprobe needed) ──────────────────────────────────
+// ─── MP3 Duration Parser ──────────────────────────────────────────────────────
 function parseMp3Duration(filePath) {
+    // Try macOS native afinfo first
+    try {
+        const out = execSync(`afinfo "${filePath}"`, { stdio: ["ignore", "pipe", "ignore"] }).toString();
+        const m = out.match(/estimated duration:\s*([\d.]+)/);
+        if (m) return Math.max(1, Math.round(parseFloat(m[1])));
+    } catch (_) {}
+
+    // Fallback: parse ID3 and first MPEG header
     try {
         const stat = fs.statSync(filePath);
         const fd = fs.openSync(filePath, "r");
@@ -453,10 +470,18 @@ function parseMp3Duration(filePath) {
     return 240;
 }
 
-// ─── Boot ─────────────────────────────────────────────────────────────────────
-process.on("exit", () => { if (player) player.kill("SIGKILL"); });
-process.on("SIGINT", () => { if (player) player.kill("SIGKILL"); process.stdout.write("\x1b[?25h\n"); process.exit(0); });
-process.on("SIGTERM", () => { if (player) player.kill("SIGKILL"); process.exit(0); });
+// ─── Boot & Cleanup ───────────────────────────────────────────────────────────
+function cleanupAndExit() {
+    if (player) killPlayer(player);
+    clearInterval(ticker);
+    cleanupSeekFile();
+    process.stdout.write("\x1b[?25h\n");
+    process.exit(0);
+}
+
+process.on("exit", () => { if (player) killPlayer(player); cleanupSeekFile(); });
+process.on("SIGINT", cleanupAndExit);
+process.on("SIGTERM", cleanupAndExit);
 
 // Hide cursor for clean UI
 process.stdout.write("\x1b[?25l");
@@ -503,20 +528,18 @@ listenKeys((key, arg) => {
         if (loopMode === "OFF") loopMode = "SINGLE";
         else if (loopMode === "SINGLE") loopMode = "ALL";
         else loopMode = "OFF";
-        notify(`Loop: ${loopMode}`);
+        notify(`🔁 Loop: ${loopMode}`);
         draw();
     } else if (key === "SHUFFLE") {
         shuffle = !shuffle;
-        notify(`Shuffle: ${shuffle ? "ON" : "OFF"}`);
+        notify(`🔀 Shuffle: ${shuffle ? "ON" : "OFF"}`);
         draw();
     } else if (key === "VOL_UP") {
         setVolume(volume + 10);
     } else if (key === "VOL_DOWN") {
         setVolume(volume - 10);
     } else if (key === "MUTE") {
-        muted = !muted;
-        if (player) setVolume(volume);
-        else { notify(muted ? "Muted" : `Volume: ${volume}%`); draw(); }
+        toggleMute();
     } else if (key === "SEARCH") {
         searchMode = true;
         searchQuery = "";
@@ -527,14 +550,18 @@ listenKeys((key, arg) => {
         const i = arg - 1;
         if (i >= 0 && i < filtered.length) playSong(i);
     } else if (key === "LEFT") {
-        if (player) { seekTo(elapsed - 5); notify("⏪ -5s"); }
+        if (player) {
+            seekTo(elapsed - 5);
+            notify(`⏪ -5s (${fmt(Math.max(0, elapsed - 5))})`);
+        }
     } else if (key === "RIGHT") {
-        if (player) { seekTo(elapsed + 5); notify("⏩ +5s"); }
+        if (player) {
+            seekTo(elapsed + 5);
+            notify(`⏩ +5s (${fmt(Math.min(duration, elapsed + 5))})`);
+        }
     } else if (key === "SPEED") {
         cycleSpeed();
     } else if (key === "QUIT") {
-        if (player) killPlayer(player);
-        process.stdout.write("\x1b[?25h\n");
-        process.exit(0);
+        cleanupAndExit();
     }
 });

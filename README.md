@@ -564,38 +564,41 @@ const DANCE_FRAMES = [
 
 ## Topics Covered
 
-* Native MP3 Header Parsing for Frame-accurate Duration fallback
+* Real Audio Seeking via Native MPEG Slicing (`←` / `→` for -/+ 5 seconds)
+* Variable Playback Speed Scaling (`0.25x`, `0.5x`, `0.75x`, `1x`, `1.25x`, `1.5x`, `2x`, `3x`)
+* Native MP3 Header & `afinfo` Parsing for Frame-accurate Duration
 * Real-time Interactive Terminal Search & Live Filtering
-* Volume Control Scaling (`-v` flag integration with `afplay`)
-* Dynamic ANSI Color Themes (`Cyan`, `Green`, `Magenta`, `Yellow`)
+* Volume Control Scaling & Instant Mute (`+`/`-` and `m`)
 * Numeric Quick-Key Direct Song Selection (`1`-`9`)
-* Full Keyboard Event Mapping in Node.js Raw Mode
+* Full Keyboard Event Mapping in Node.js Raw Mode with zero-latency SIGSTOP/SIGCONT controls
 
 ## What We Added
 
 An end-to-end full-featured terminal audio dashboard with:
 
-* **Native MP3 Header Parser**: Extracts duration directly from MP3 frame headers if `ffprobe` is not installed, eliminating duration fallback errors.
+* **Real Audio Seeking**: Press `←` / `→` arrow keys to jump backward or forward by 5 seconds with instant native audio resampling.
+* **Playback Speed Scaling**: Press `f` to cycle playback rates from slow-motion (`0.25x`, `0.5x`, `0.75x`) to standard (`1x`) and high-speed fast-forward (`1.25x`, `1.5x`, `2x`, `3x`) with synchronized timeline progression.
+* **Native Duration Parser**: Frame-accurate duration extraction via macOS native `afinfo` and MP3 header byte parsing fallback.
 * **Live Search & Filter**: Press `/` to enter search mode, filter songs in real-time as you type, and press `Enter` to play the top result.
 * **Volume Control & Mute**: Press `+`/`-` to adjust audio volume dynamically (0%-100%) and `m` to mute/unmute playback instantly.
 * **Numeric Direct Selection**: Press numbers `1` through `9` to jump directly to and play the corresponding track index.
-* **Color Themes**: Press `t` to cycle between terminal color palettes (`CYAN`, `GREEN`, `MAGENTA`, `YELLOW`).
+* **Loop & Shuffle**: `l` cycles single-track, playlist loop, and off; `s` toggles random shuffle with no immediate repeats.
 
 ## Complete Controls Reference
 
-| Key          | Action                                                    |
-|--------------|-----------------------------------------------------------|
-| ↑ / ↓ Arrows | Navigate selection up / down                              |
-| Enter        | Play selected song                                        |
-| Spacebar     | Pause / Resume playback                                   |
-| `n` / `p`     | Skip to Next / Previous track                             |
-| `+` / `-`     | Increase / Decrease volume (by 10%)                       |
-| `m`          | Toggle Mute                                               |
-| `l`          | Toggle Loop Mode (`Off` -> `Single` -> `All`)             |
-| `s`          | Toggle Shuffle Mode (`Off` / `On`)                        |
-| `t`          | Switch ANSI Color Theme                                   |
-| `/`          | Activate Search mode (type to filter live)                |
-| `1` - `9`    | Quick play track 1 to 9                                   |
-| ← / → Arrows | Visual 10s seek jump                                      |
-| Esc          | Clear search / exit search mode                           |
-| Ctrl + C     | Stop audio and exit application                           |
+| Key          | Action                                                                              |
+|--------------|-------------------------------------------------------------------------------------|
+| ↑ / ↓ Arrows | Navigate playlist selection up / down                                               |
+| Enter        | Play selected song / play top search result                                         |
+| Spacebar     | Pause / Resume playback (zero latency)                                              |
+| ← / → Arrows | Seek 5 seconds backward / forward in real-time                                      |
+| `f`          | Cycle playback speed (`0.25x` -> `0.5x` -> `1x` -> `1.5x` -> `2x` -> `3x`)           |
+| `n` / `p`     | Skip to Next / Previous track                                                       |
+| `+` / `-`     | Increase / Decrease volume (by 10%)                                                 |
+| `m`          | Toggle Mute / Unmute                                                                |
+| `l`          | Toggle Loop Mode (`OFF` -> `🔂 SINGLE` -> `🔁 ALL`)                                 |
+| `s`          | Toggle Shuffle Mode (`OFF` / `🔀 ON`)                                               |
+| `/`          | Activate Search mode (type to filter live)                                          |
+| `1` - `9`    | Quick play track 1 to 9 directly                                                    |
+| Esc          | Clear search query / exit search mode                                               |
+| `q` / Ctrl+C | Stop audio playback and exit application cleanly                                    |
