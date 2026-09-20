@@ -557,3 +557,45 @@ const DANCE_FRAMES = [
 | `s`          | Toggle shuffle mode (`Off` / `🔀 On`)                    |
 | ← / → Arrows | Seek 10 seconds backward/forward (visually)              |
 | Ctrl + C     | Exit and clean up all processes                           |
+
+---
+
+# AD-8: CLI Music Player Pro — Ultimate Features & Native Audio Engine
+
+## Topics Covered
+
+* Native MP3 Header Parsing for Frame-accurate Duration fallback
+* Real-time Interactive Terminal Search & Live Filtering
+* Volume Control Scaling (`-v` flag integration with `afplay`)
+* Dynamic ANSI Color Themes (`Cyan`, `Green`, `Magenta`, `Yellow`)
+* Numeric Quick-Key Direct Song Selection (`1`-`9`)
+* Full Keyboard Event Mapping in Node.js Raw Mode
+
+## What We Added
+
+An end-to-end full-featured terminal audio dashboard with:
+
+* **Native MP3 Header Parser**: Extracts duration directly from MP3 frame headers if `ffprobe` is not installed, eliminating duration fallback errors.
+* **Live Search & Filter**: Press `/` to enter search mode, filter songs in real-time as you type, and press `Enter` to play the top result.
+* **Volume Control & Mute**: Press `+`/`-` to adjust audio volume dynamically (0%-100%) and `m` to mute/unmute playback instantly.
+* **Numeric Direct Selection**: Press numbers `1` through `9` to jump directly to and play the corresponding track index.
+* **Color Themes**: Press `t` to cycle between terminal color palettes (`CYAN`, `GREEN`, `MAGENTA`, `YELLOW`).
+
+## Complete Controls Reference
+
+| Key          | Action                                                    |
+|--------------|-----------------------------------------------------------|
+| ↑ / ↓ Arrows | Navigate selection up / down                              |
+| Enter        | Play selected song                                        |
+| Spacebar     | Pause / Resume playback                                   |
+| `n` / `p`     | Skip to Next / Previous track                             |
+| `+` / `-`     | Increase / Decrease volume (by 10%)                       |
+| `m`          | Toggle Mute                                               |
+| `l`          | Toggle Loop Mode (`Off` -> `Single` -> `All`)             |
+| `s`          | Toggle Shuffle Mode (`Off` / `On`)                        |
+| `t`          | Switch ANSI Color Theme                                   |
+| `/`          | Activate Search mode (type to filter live)                |
+| `1` - `9`    | Quick play track 1 to 9                                   |
+| ← / → Arrows | Visual 10s seek jump                                      |
+| Esc          | Clear search / exit search mode                           |
+| Ctrl + C     | Stop audio and exit application                           |
