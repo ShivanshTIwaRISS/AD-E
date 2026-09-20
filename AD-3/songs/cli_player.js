@@ -18,53 +18,60 @@ let currentTime = 0;
 let isPaused = false;
 let isInitialRender = true;
 
-// Player States
-let loopMode = "OFF";
+let loopMode = "OFF"; // "OFF", "SINGLE", "ALL"
 let isShuffle = false;
-let volume = 100;
+let volume = 80;
 let isMuted = false;
 let seekFeedback = "";
 let searchMode = false;
 let searchQuery = "";
-let currentTheme = "CYAN";
+let currentTheme = "NEON_VIPER";
+let activeTab = "PLAYER"; // "PLAYER", "HELP"
 
-// Color Themes
 const THEMES = {
-    CYAN: { primary: "\x1b[36m", accent: "\x1b[35m", highlight: "\x1b[33m", dim: "\x1b[90m" },
-    GREEN: { primary: "\x1b[32m", accent: "\x1b[36m", highlight: "\x1b[33m", dim: "\x1b[90m" },
-    MAGENTA: { primary: "\x1b[35m", accent: "\x1b[33m", highlight: "\x1b[36m", dim: "\x1b[90m" },
-    YELLOW: { primary: "\x1b[33m", accent: "\x1b[32m", highlight: "\x1b[35m", dim: "\x1b[90m" }
+    NEON_VIPER: { primary: "\x1b[38;5;51m", accent: "\x1b[38;5;198m", highlight: "\x1b[38;5;226m", dim: "\x1b[38;5;242m", box: "\x1b[38;5;141m" },
+    BOLLYWOOD_GOLD: { primary: "\x1b[38;5;220m", accent: "\x1b[38;5;208m", highlight: "\x1b[38;5;196m", dim: "\x1b[38;5;244m", box: "\x1b[38;5;214m" },
+    CYBER_GREEN: { primary: "\x1b[38;5;46m", accent: "\x1b[38;5;51m", highlight: "\x1b[38;5;226m", dim: "\x1b[38;5;240m", box: "\x1b[38;5;34m" },
+    SUNSET_PURPLE: { primary: "\x1b[38;5;135m", accent: "\x1b[38;5;205m", highlight: "\x1b[38;5;227m", dim: "\x1b[38;5;243m", box: "\x1b[38;5;99m" }
 };
 const THEME_KEYS = Object.keys(THEMES);
 
-// Dancing Visualizer ASCII Characters
+// Audio Visualizer Bars (12 columns x 4 frames)
+const VISUALIZER_FRAMES = [
+    [" ▂▃▄▅▆▇█▇▆▅▄", "▄▅▆▇█▇▆▅▄▃▂ ", "▇▆▅▄▃▂ ▂▃▄▅▆"],
+    ["▃▄▅▆▇█▇▆▅▄▃▂", "▆▇█▇▆▅▄▃▂ ▂▃", "▅▄▃▂ ▂▃▄▅▆▇█"],
+    ["▅▆▇█▇▆▅▄▃▂ ▂", "█▇▆▅▄▃▂ ▂▃▄▅", "▃▂ ▂▃▄▅▆▇█▇▆"],
+    ["▇█▇▆▅▄▃▂ ▂▃▄", "▃▂ ▂▃▄▅▆▇█▇▆", "▂ ▂▃▄▅▆▇█▇▆▅"]
+];
+
+// Animated ASCII Dancers with stage lights
 const DANCE_FRAMES = [
     [
-        "  (•_•)      (❛‿❛)      /\\_/\\  ",
-        "  <) )>      /👗\\     ( o.o ) ~🐾",
-        "  /   \\      /   \\     > ^ <   "
+        "  ✨ (•_•) ✨      💃 (❛‿❛) 💃      🐱 /\\_/\\ 🐱 ",
+        "  <)   )>          /👗\\            ( o.o ) ~🐾",
+        "  /     \\          /   \\            > ^ <     "
     ],
     [
-        "  (•_•)      (❛‿❛)      /\\_/\\  ",
-        "  \\( )/      \\👗/     ( =.= ) 🐾~",
-        "  /   \\      /   \\     > ^ <   "
+        "  🎶 (•_•) 🎶      💃 (❛‿❛) 💃      🐱 /\\_/\\ 🐱 ",
+        "  \\(   )/          \\👗/            ( =.= ) 🐾~",
+        "  /     \\          /   \\            > ^ <     "
     ],
     [
-        " \\(•_•)/    \\(❛‿❛)/     /\\_/\\  ",
-        "   ) )       /👗\\     ( 0.0 ) ~🐾",
-        "  /   \\      /   \\     > ^ <   "
+        "  🔥 \\(•_•)/ 🔥    💃 \\(❛‿❛)/ 💃    🐱 /\\_/\\ 🐱 ",
+        "     (   )          /👗\\            ( 0.0 ) ~🐾",
+        "    /     \\         /   \\            > ^ <     "
     ],
     [
-        "  (•_•)      (❛‿❛)      /\\_/\\  ",
-        "  <) )\\      ~👗~     ( -.- ) 🐾~",
-        "  /   \\       / \\      > ^ <   "
+        "  ⚡ (•_•) ⚡      💃 (❛‿❛) 💃      🐱 /\\_/\\ 🐱 ",
+        "  <)   )\\          ~👗~            ( -.- ) 🐾~",
+        "  /     \\           / \\             > ^ <     "
     ]
 ];
 
 const PAUSED_FRAME = [
-    "  (x_x)      (◡_◡)      /\\_/\\  ",
-    "  <) )>      /👗\\     ( z.z )  ",
-    "  /   \\      /   \\     > ^ <   "
+    "     (x_x) zZZ        (◡_◡) zZZ        /\\_/\\  zZZ",
+    "     <) )>            /👗\\            ( z.z )    ",
+    "     /   \\            /   \\            > ^ <     "
 ];
 
 function redrawUI() {
@@ -121,7 +128,7 @@ function applySearchFilter() {
     if (currentIndex >= filteredSongs.length) {
         currentIndex = Math.max(0, filteredSongs.length - 1);
     }
-    renderSongs();
+    renderUI();
 }
 
 function getNextIndex() {
@@ -138,11 +145,7 @@ function getNextIndex() {
     } else {
         let nextIndex = playingIndex + 1;
         if (nextIndex >= activeList.length) {
-            if (loopMode === "ALL") {
-                return 0;
-            } else {
-                return -1;
-            }
+            return loopMode === "ALL" ? 0 : -1;
         }
         return nextIndex;
     }
@@ -162,11 +165,7 @@ function getPrevIndex() {
     } else {
         let prevIndex = playingIndex - 1;
         if (prevIndex < 0) {
-            if (loopMode === "ALL") {
-                return activeList.length - 1;
-            } else {
-                return -1;
-            }
+            return loopMode === "ALL" ? activeList.length - 1 : -1;
         }
         return prevIndex;
     }
@@ -176,66 +175,117 @@ function getEffectiveVolume() {
     return isMuted ? 0 : volume / 100;
 }
 
-function renderSongs() {
+function cleanSongTitle(filename) {
+    return filename
+        .replace(/\.mp3$/i, "")
+        .replace(/_/g, " ")
+        .replace(/-/g, " ");
+}
+
+function renderUI() {
     redrawUI();
     const t = THEMES[currentTheme];
+    const b = t.box;
+    const reset = "\x1b[0m";
 
-    console.log(`🎵 ${t.accent}CLI Music Player Pro - Dynamic Audio Engine\x1b[0m`);
-    console.log("---------------------------------------------------------");
-    console.log(`${t.dim}↑/↓: Navigate  | Enter: Play | Space: Pause/Resume | n/p: Next/Prev\x1b[0m`);
-    console.log(`${t.dim}+/-: Volume    | m: Mute     | l: Loop     | s: Shuffle | t: Theme\x1b[0m`);
-    console.log(`${t.dim}/: Search      | 1-9: Quick  | ←/→: Seek 10s| Esc: Reset search\x1b[0m`);
-    console.log("---------------------------------------------------------");
+    console.log(`${b}╔═══════════════════════════════════════════════════════════════════════════╗${reset}`);
+    console.log(`${b}║ ${t.accent}🎧 BOLLYWOOD CLI MUSIC PLAYER PRO v2.0${reset}  ${t.dim}[Theme: ${currentTheme}]${reset}        ${b}║${reset}`);
+    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
 
-    const loopStatus = loopMode === "SINGLE" ? "🔂 Single" : (loopMode === "ALL" ? "🔁 All" : "Off");
-    const shuffleStatus = isShuffle ? "🔀 On" : "Off";
-    const volumeStatus = isMuted ? "\x1b[31mMuted\x1b[0m" : `${volume}%`;
-    
-    console.log(`Loop: ${t.accent}${loopStatus}\x1b[0m | Shuffle: ${t.accent}${shuffleStatus}\x1b[0m | Volume: ${t.accent}${volumeStatus}\x1b[0m | Theme: ${t.accent}${currentTheme}\x1b[0m`);
+    // Quick Action Bar
+    const loopTxt = loopMode === "SINGLE" ? "🔂 Single" : (loopMode === "ALL" ? "🔁 Playlist" : "Off");
+    const shufTxt = isShuffle ? "🔀 On" : "Off";
+    const volTxt = isMuted ? "\x1b[31mMUTED\x1b[0m" : `🔊 ${volume}%`;
+    console.log(`${b}║${reset}  Loop: ${t.accent}${loopTxt.padEnd(10)}${reset} | Shuffle: ${t.accent}${shufTxt.padEnd(5)}${reset} | Vol: ${t.accent}${volTxt.padEnd(10)}${reset} | Tab: ${t.highlight}[h] Help${reset} ${b}║${reset}`);
+    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
 
-    if (searchMode || searchQuery) {
-        console.log(`Search: ${t.highlight}${searchQuery}${searchMode ? "█" : ""}\x1b[0m (${filteredSongs.length} matches)\n`);
-    } else {
-        console.log("");
+    if (activeTab === "HELP") {
+        renderHelpTab(t, b, reset);
+        return;
     }
 
+    if (searchMode || searchQuery) {
+        console.log(`${b}║${reset}  🔍 Search: ${t.highlight}${searchQuery}${searchMode ? "█" : ""}${reset} (${filteredSongs.length} found)${" ".repeat(30 - searchQuery.length)} ${b}║${reset}`);
+        console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
+    }
+
+    // Playlist Render
+    console.log(`${b}║${reset}  ${t.dim}PLAYLIST (${filteredSongs.length} TRACKS):${reset}${" ".repeat(46)} ${b}║${reset}`);
     if (filteredSongs.length === 0) {
-        console.log(`   ${t.dim}(No songs found matching query)\x1b[0m`);
+        console.log(`${b}║${reset}    ${t.dim}No tracks matched your search query.${reset}${" ".repeat(28)} ${b}║${reset}`);
     } else {
-        filteredSongs.forEach((song, index) => {
-            const numPrefix = index < 9 ? `${t.dim}[${index + 1}]\x1b[0m ` : "    ";
-            if (index === currentIndex) {
-                console.log(`${numPrefix}> ${t.primary}${song}\x1b[0m`);
+        filteredSongs.forEach((song, idx) => {
+            const cleanName = cleanSongTitle(song);
+            const truncated = cleanName.length > 42 ? cleanName.substring(0, 39) + "..." : cleanName.padEnd(42);
+            const numTag = idx < 9 ? `[${idx + 1}]` : "   ";
+
+            if (idx === currentIndex) {
+                const isPlayingThis = idx === playingIndex && currentSongProcess;
+                const icon = isPlayingThis ? (isPaused ? "⏸ " : "▶ ") : "👉";
+                console.log(`${b}║${reset} ${t.highlight}${numTag} ${icon} ${t.primary}${truncated}${reset} ${t.accent}⭐ SELECTED${reset} ${b}║${reset}`);
+            } else if (idx === playingIndex && currentSongProcess) {
+                console.log(`${b}║${reset} ${t.dim}${numTag} 🎵 ${reset}${t.accent}${truncated}${reset} ${t.dim}(Playing)${reset}  ${b}║${reset}`);
             } else {
-                console.log(`${numPrefix}  ${song}`);
+                console.log(`${b}║${reset} ${t.dim}${numTag}    ${truncated}${reset}            ${b}║${reset}`);
             }
         });
     }
 
-    console.log("\n---------------------------------------------------------");
+    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
+
+    // Now Playing Dashboard & Audio Visualizer
     if (playingIndex !== -1 && currentSongProcess && filteredSongs[playingIndex]) {
         const frames = isPaused ? PAUSED_FRAME : DANCE_FRAMES[currentTime % DANCE_FRAMES.length];
-        console.log("   🕺 Boy       💃 Girl      🐱 Cat");
-        frames.forEach(line => console.log(line));
-        console.log("");
+        const viz = isPaused ? "  ░░░░░░░░░░░░ PAUSED ░░░░░░░░░░░░  " : `  ${t.accent}${VISUALIZER_FRAMES[currentTime % VISUALIZER_FRAMES.length].join("  ")}${reset}  `;
+        
+        console.log(`${b}║${reset}  ${t.dim}DYNAMIC AUDIO STAGE & VISUALIZER:${reset}${" ".repeat(34)} ${b}║${reset}`);
+        frames.forEach(line => {
+            console.log(`${b}║${reset}  ${line.padEnd(69)} ${b}║${reset}`);
+        });
+        console.log(`${b}║${reset}${viz}${" ".repeat(28)} ${b}║${reset}`);
+        console.log(`${b}╟───────────────────────────────────────────────────────────────────────────╢${reset}`);
 
-        const width = 30;
+        const width = 34;
         const percent = currentDuration > 0 ? currentTime / currentDuration : 0;
         const filled = Math.min(width, Math.floor(width * percent));
         const bar = "█".repeat(filled) + "░".repeat(width - filled);
-        const statusText = isPaused ? "\x1b[33mPaused\x1b[0m" : "\x1b[32mPlaying\x1b[0m";
+        const statusText = isPaused ? "\x1b[33m⏸ PAUSED\x1b[0m" : "\x1b[32m▶ PLAYING\x1b[0m";
+        const currentTitle = cleanSongTitle(filteredSongs[playingIndex]);
+        const shortTitle = currentTitle.length > 30 ? currentTitle.substring(0, 27) + "..." : currentTitle.padEnd(30);
 
-        console.log(`Status   : ${statusText}`);
-        console.log(`Playing  : ${t.primary}${filteredSongs[playingIndex]}\x1b[0m`);
-        console.log(`Progress : [${bar}] ${Math.floor(percent * 100)}% (${formatTime(currentTime)} / ${formatTime(currentDuration)})`);
+        console.log(`${b}║${reset}  Track   : ${t.primary}${shortTitle}${reset} | Status: ${statusText.padEnd(18)} ${b}║${reset}`);
+        console.log(`${b}║${reset}  Progress: ${t.accent}[${bar}]${reset} ${Math.floor(percent * 100).toString().padStart(3)}% (${formatTime(currentTime)} / ${formatTime(currentDuration)}) ${b}║${reset}`);
+        
         if (seekFeedback) {
-            console.log(seekFeedback);
+            console.log(`${b}║${reset}  ${seekFeedback.padEnd(69)} ${b}║${reset}`);
         }
     } else {
-        console.log(`Status   : ${t.dim}Stopped\x1b[0m`);
-        console.log("Select a song and press Enter to play.");
+        console.log(`${b}║${reset}  ${t.dim}STATUS: STOPPED. Select a track using ↑/↓ or 1-9 and press ENTER.${reset}   ${b}║${reset}`);
     }
-    console.log("---------------------------------------------------------");
+
+    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
+    console.log(`${b}║${reset} ${t.dim}[↑/↓] Nav  [Enter] Play  [Space] Pause  [n/p] Next/Prev  [+] Vol  [/] Search${reset} ${b}║${reset}`);
+    console.log(`${b}╚═══════════════════════════════════════════════════════════════════════════╝${reset}`);
+}
+
+function renderHelpTab(t, b, reset) {
+    console.log(`${b}║${reset}  ${t.highlight}📖 CONTROLS & SHORTCUTS GUIDE:${reset}${" ".repeat(40)} ${b}║${reset}`);
+    console.log(`${b}║${reset}                                                                           ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}ENTER${reset}      : Play highlighted song                               ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}SPACE${reset}      : Pause / Resume playback                             ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}n / p${reset}      : Skip to Next / Previous track                       ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}+ / -${reset}      : Increase / Decrease Volume (10% step)               ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}m${reset}          : Toggle Mute / Unmute                                ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}l / s${reset}      : Toggle Loop Mode / Shuffle Mode                     ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}t${reset}          : Switch Color Theme (4 neon presets)                 ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}/${reset}          : Live Search Mode (Type to filter playlist)          ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}1 - 9${reset}      : Quick Jump & Play track index                       ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}h${reset}          : Toggle this Help Menu / Main Player View            ${b}║${reset}`);
+    console.log(`${b}║${reset}   • ${t.primary}Ctrl + C${reset}   : Stop music and exit player                          ${b}║${reset}`);
+    console.log(`${b}║${reset}                                                                           ${b}║${reset}`);
+    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
+    console.log(`${b}║${reset}  ${t.accent}Press 'h' or 'ESC' to return to the player...${reset}${" ".repeat(28)} ${b}║${reset}`);
+    console.log(`${b}╚═══════════════════════════════════════════════════════════════════════════╝${reset}`);
 }
 
 function playSong(songPath) {
@@ -250,9 +300,9 @@ function playSong(songPath) {
         const effectiveVol = getEffectiveVolume();
         currentSongProcess = spawn("afplay", ["-v", effectiveVol.toString(), songPath]);
 
-        currentSongProcess.on("error", (err) => {
+        currentSongProcess.on("error", () => {
             stopSong();
-            renderSongs();
+            renderUI();
         });
 
         startProgress();
@@ -268,7 +318,7 @@ function playSong(songPath) {
                     const nextIndex = getNextIndex();
                     if (nextIndex === -1) {
                         stopSong();
-                        renderSongs();
+                        renderUI();
                     } else {
                         currentIndex = nextIndex;
                         playCurrentSong();
@@ -301,7 +351,7 @@ function togglePlayPause() {
         currentSongProcess.kill("SIGSTOP");
         isPaused = true;
         clearInterval(progressInterval);
-        renderSongs();
+        renderUI();
     }
 }
 
@@ -315,7 +365,7 @@ listenKeys((key, extra) => {
                 currentIndex = 0;
                 playCurrentSong();
             } else {
-                renderSongs();
+                renderUI();
             }
             return;
         }
@@ -342,17 +392,30 @@ listenKeys((key, extra) => {
 
     if (songs.length === 0) return;
 
-    if (key === "SEARCH") {
-        searchMode = true;
-        renderSongs();
+    if (key === "CHAR" && (extra === "h" || extra === "H")) {
+        activeTab = activeTab === "HELP" ? "PLAYER" : "HELP";
+        renderUI();
         return;
     }
 
     if (key === "ESC") {
+        if (activeTab === "HELP") {
+            activeTab = "PLAYER";
+            renderUI();
+            return;
+        }
         if (searchQuery) {
             searchQuery = "";
             applySearchFilter();
         }
+        return;
+    }
+
+    if (activeTab === "HELP") return;
+
+    if (key === "SEARCH") {
+        searchMode = true;
+        renderUI();
         return;
     }
 
@@ -368,14 +431,14 @@ listenKeys((key, extra) => {
     if (key === "UP") {
         currentIndex--;
         if (currentIndex < 0) currentIndex = 0;
-        renderSongs();
+        renderUI();
     }
     if (key === "DOWN") {
         currentIndex++;
         if (currentIndex >= filteredSongs.length) {
             currentIndex = Math.max(0, filteredSongs.length - 1);
         }
-        renderSongs();
+        renderUI();
     }
     if (key === "ENTER") {
         playCurrentSong();
@@ -391,7 +454,7 @@ listenKeys((key, extra) => {
                 playCurrentSong();
             } else {
                 stopSong();
-                renderSongs();
+                renderUI();
             }
         }
     }
@@ -406,7 +469,7 @@ listenKeys((key, extra) => {
                 playCurrentSong();
             } else {
                 stopSong();
-                renderSongs();
+                renderUI();
             }
         }
     }
@@ -417,53 +480,53 @@ listenKeys((key, extra) => {
         if (loopMode === "OFF") loopMode = "SINGLE";
         else if (loopMode === "SINGLE") loopMode = "ALL";
         else loopMode = "OFF";
-        renderSongs();
+        renderUI();
     }
     if (key === "SHUFFLE") {
         isShuffle = !isShuffle;
-        renderSongs();
+        renderUI();
     }
     if (key === "VOL_UP") {
         volume = Math.min(100, volume + 10);
         if (isMuted) isMuted = false;
         if (playingIndex !== -1 && currentSongProcess) playCurrentSong();
-        else renderSongs();
+        else renderUI();
     }
     if (key === "VOL_DOWN") {
         volume = Math.max(0, volume - 10);
         if (playingIndex !== -1 && currentSongProcess) playCurrentSong();
-        else renderSongs();
+        else renderUI();
     }
     if (key === "MUTE") {
         isMuted = !isMuted;
         if (playingIndex !== -1 && currentSongProcess) playCurrentSong();
-        else renderSongs();
+        else renderUI();
     }
     if (key === "THEME") {
         const idx = THEME_KEYS.indexOf(currentTheme);
         currentTheme = THEME_KEYS[(idx + 1) % THEME_KEYS.length];
-        renderSongs();
+        renderUI();
     }
     if (key === "RIGHT") {
         if (playingIndex !== -1 && currentSongProcess) {
             currentTime = Math.min(currentDuration, currentTime + 10);
-            seekFeedback = "   \x1b[33m⚡ Seeked +10s (Visual) ⚡\x1b[0m";
+            seekFeedback = "   \x1b[38;5;226m⚡ Seeked +10s (Visual Jump) ⚡\x1b[0m";
             setTimeout(() => {
                 seekFeedback = "";
-                renderSongs();
+                renderUI();
             }, 1500);
-            renderSongs();
+            renderUI();
         }
     }
     if (key === "LEFT") {
         if (playingIndex !== -1 && currentSongProcess) {
             currentTime = Math.max(0, currentTime - 10);
-            seekFeedback = "   \x1b[33m⚡ Seeked -10s (Visual) ⚡\x1b[0m";
+            seekFeedback = "   \x1b[38;5;226m⚡ Seeked -10s (Visual Jump) ⚡\x1b[0m";
             setTimeout(() => {
                 seekFeedback = "";
-                renderSongs();
+                renderUI();
             }, 1500);
-            renderSongs();
+            renderUI();
         }
     }
 });
@@ -552,12 +615,12 @@ function formatTime(seconds) {
 function startProgress() {
     clearInterval(progressInterval);
 
-    renderSongs();
+    renderUI();
 
     progressInterval = setInterval(() => {
         currentTime++;
 
-        renderSongs();
+        renderUI();
 
         if (currentTime >= currentDuration) {
             clearInterval(progressInterval);
