@@ -16,71 +16,17 @@ let progressInterval = null;
 let currentDuration = 0;
 let currentTime = 0;
 let isPaused = false;
-let isInitialRender = true;
 
-let loopMode = "OFF"; // "OFF", "SINGLE", "ALL"
+let loopMode = "OFF";
 let isShuffle = false;
 let volume = 80;
 let isMuted = false;
 let seekFeedback = "";
 let searchMode = false;
 let searchQuery = "";
-let currentTheme = "NEON_VIPER";
-let activeTab = "PLAYER"; // "PLAYER", "HELP"
 
-const THEMES = {
-    NEON_VIPER: { primary: "\x1b[38;5;51m", accent: "\x1b[38;5;198m", highlight: "\x1b[38;5;226m", dim: "\x1b[38;5;242m", box: "\x1b[38;5;141m" },
-    BOLLYWOOD_GOLD: { primary: "\x1b[38;5;220m", accent: "\x1b[38;5;208m", highlight: "\x1b[38;5;196m", dim: "\x1b[38;5;244m", box: "\x1b[38;5;214m" },
-    CYBER_GREEN: { primary: "\x1b[38;5;46m", accent: "\x1b[38;5;51m", highlight: "\x1b[38;5;226m", dim: "\x1b[38;5;240m", box: "\x1b[38;5;34m" },
-    SUNSET_PURPLE: { primary: "\x1b[38;5;135m", accent: "\x1b[38;5;205m", highlight: "\x1b[38;5;227m", dim: "\x1b[38;5;243m", box: "\x1b[38;5;99m" }
-};
-const THEME_KEYS = Object.keys(THEMES);
-
-// Audio Visualizer Bars (12 columns x 4 frames)
-const VISUALIZER_FRAMES = [
-    [" ▂▃▄▅▆▇█▇▆▅▄", "▄▅▆▇█▇▆▅▄▃▂ ", "▇▆▅▄▃▂ ▂▃▄▅▆"],
-    ["▃▄▅▆▇█▇▆▅▄▃▂", "▆▇█▇▆▅▄▃▂ ▂▃", "▅▄▃▂ ▂▃▄▅▆▇█"],
-    ["▅▆▇█▇▆▅▄▃▂ ▂", "█▇▆▅▄▃▂ ▂▃▄▅", "▃▂ ▂▃▄▅▆▇█▇▆"],
-    ["▇█▇▆▅▄▃▂ ▂▃▄", "▃▂ ▂▃▄▅▆▇█▇▆", "▂ ▂▃▄▅▆▇█▇▆▅"]
-];
-
-// Animated ASCII Dancers with stage lights
-const DANCE_FRAMES = [
-    [
-        "  ✨ (•_•) ✨      💃 (❛‿❛) 💃      🐱 /\\_/\\ 🐱 ",
-        "  <)   )>          /👗\\            ( o.o ) ~🐾",
-        "  /     \\          /   \\            > ^ <     "
-    ],
-    [
-        "  🎶 (•_•) 🎶      💃 (❛‿❛) 💃      🐱 /\\_/\\ 🐱 ",
-        "  \\(   )/          \\👗/            ( =.= ) 🐾~",
-        "  /     \\          /   \\            > ^ <     "
-    ],
-    [
-        "  🔥 \\(•_•)/ 🔥    💃 \\(❛‿❛)/ 💃    🐱 /\\_/\\ 🐱 ",
-        "     (   )          /👗\\            ( 0.0 ) ~🐾",
-        "    /     \\         /   \\            > ^ <     "
-    ],
-    [
-        "  ⚡ (•_•) ⚡      💃 (❛‿❛) 💃      🐱 /\\_/\\ 🐱 ",
-        "  <)   )\\          ~👗~            ( -.- ) 🐾~",
-        "  /     \\           / \\             > ^ <     "
-    ]
-];
-
-const PAUSED_FRAME = [
-    "     (x_x) zZZ        (◡_◡) zZZ        /\\_/\\  zZZ",
-    "     <) )>            /👗\\            ( z.z )    ",
-    "     /   \\            /   \\            > ^ <     "
-];
-
-function redrawUI() {
-    if (isInitialRender) {
-        console.clear();
-        isInitialRender = false;
-    } else {
-        process.stdout.write("\x1b[H\x1b[J");
-    }
+function clearScreen() {
+    process.stdout.write("\x1b[2J\x1b[3J\x1b[H");
 }
 
 function stopSong() {
@@ -97,25 +43,23 @@ function stopSong() {
 process.on("exit", stopSong);
 process.on("SIGINT", () => {
     stopSong();
+    clearScreen();
     process.exit(0);
 });
 process.on("SIGTERM", () => {
     stopSong();
+    clearScreen();
     process.exit(0);
 });
 
 function listSongs(directoryPath) {
-    const lsProcess = spawn("ls", [directoryPath]);
-    let output = "";
-    lsProcess.stdout.on("data", (data) => {
-        output += data.toString();
-    });
-    lsProcess.on("close", () => {
-        songs = output.trim().split(/\r?\n/).filter((file) => file.endsWith(".mp3"));
+    fs.readdir(directoryPath, (err, files) => {
+        if (err) {
+            songs = [];
+        } else {
+            songs = files.filter(f => f.endsWith(".mp3")).sort();
+        }
         applySearchFilter();
-    });
-    lsProcess.stderr.on("data", (data) => {
-        console.log("Error:", data.toString());
     });
 }
 
@@ -132,19 +76,19 @@ function applySearchFilter() {
 }
 
 function getNextIndex() {
-    const activeList = filteredSongs.length > 0 ? filteredSongs : songs;
-    if (activeList.length === 0) return 0;
+    const list = filteredSongs.length > 0 ? filteredSongs : songs;
+    if (list.length === 0) return 0;
 
     if (isShuffle) {
-        if (activeList.length === 1) return 0;
+        if (list.length === 1) return 0;
         let nextIndex = playingIndex;
         while (nextIndex === playingIndex) {
-            nextIndex = Math.floor(Math.random() * activeList.length);
+            nextIndex = Math.floor(Math.random() * list.length);
         }
         return nextIndex;
     } else {
         let nextIndex = playingIndex + 1;
-        if (nextIndex >= activeList.length) {
+        if (nextIndex >= list.length) {
             return loopMode === "ALL" ? 0 : -1;
         }
         return nextIndex;
@@ -152,20 +96,20 @@ function getNextIndex() {
 }
 
 function getPrevIndex() {
-    const activeList = filteredSongs.length > 0 ? filteredSongs : songs;
-    if (activeList.length === 0) return 0;
+    const list = filteredSongs.length > 0 ? filteredSongs : songs;
+    if (list.length === 0) return 0;
 
     if (isShuffle) {
-        if (activeList.length === 1) return 0;
+        if (list.length === 1) return 0;
         let prevIndex = playingIndex;
         while (prevIndex === playingIndex) {
-            prevIndex = Math.floor(Math.random() * activeList.length);
+            prevIndex = Math.floor(Math.random() * list.length);
         }
         return prevIndex;
     } else {
         let prevIndex = playingIndex - 1;
         if (prevIndex < 0) {
-            return loopMode === "ALL" ? activeList.length - 1 : -1;
+            return loopMode === "ALL" ? list.length - 1 : -1;
         }
         return prevIndex;
     }
@@ -183,109 +127,74 @@ function cleanSongTitle(filename) {
 }
 
 function renderUI() {
-    redrawUI();
-    const t = THEMES[currentTheme];
-    const b = t.box;
-    const reset = "\x1b[0m";
+    clearScreen();
 
-    console.log(`${b}╔═══════════════════════════════════════════════════════════════════════════╗${reset}`);
-    console.log(`${b}║ ${t.accent}🎧 BOLLYWOOD CLI MUSIC PLAYER PRO v2.0${reset}  ${t.dim}[Theme: ${currentTheme}]${reset}        ${b}║${reset}`);
-    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
+    console.log("\x1b[36m=========================================================================\x1b[0m");
+    console.log("🎵 \x1b[1m\x1b[35mBOLLYWOOD & HOLLYWOOD CLI MUSIC PLAYER\x1b[0m");
+    console.log("\x1b[36m=========================================================================\x1b[0m");
 
-    // Quick Action Bar
-    const loopTxt = loopMode === "SINGLE" ? "🔂 Single" : (loopMode === "ALL" ? "🔁 Playlist" : "Off");
-    const shufTxt = isShuffle ? "🔀 On" : "Off";
-    const volTxt = isMuted ? "\x1b[31mMUTED\x1b[0m" : `🔊 ${volume}%`;
-    console.log(`${b}║${reset}  Loop: ${t.accent}${loopTxt.padEnd(10)}${reset} | Shuffle: ${t.accent}${shufTxt.padEnd(5)}${reset} | Vol: ${t.accent}${volTxt.padEnd(10)}${reset} | Tab: ${t.highlight}[h] Help${reset} ${b}║${reset}`);
-    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
+    const loopTxt = loopMode === "SINGLE" ? "Repeat One" : (loopMode === "ALL" ? "Repeat All" : "Off");
+    const shufTxt = isShuffle ? "On" : "Off";
+    const volTxt = isMuted ? "\x1b[31mMuted\x1b[0m" : `${volume}%`;
 
-    if (activeTab === "HELP") {
-        renderHelpTab(t, b, reset);
-        return;
-    }
+    console.log(`Loop: \x1b[33m${loopTxt}\x1b[0m | Shuffle: \x1b[33m${shufTxt}\x1b[0m | Vol: \x1b[33m${volTxt}\x1b[0m`);
+    console.log("\x1b[36m-------------------------------------------------------------------------\x1b[0m");
 
     if (searchMode || searchQuery) {
-        console.log(`${b}║${reset}  🔍 Search: ${t.highlight}${searchQuery}${searchMode ? "█" : ""}${reset} (${filteredSongs.length} found)${" ".repeat(30 - searchQuery.length)} ${b}║${reset}`);
-        console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
+        console.log(`🔍 Search: \x1b[33m${searchQuery}${searchMode ? "█" : ""}\x1b[0m (${filteredSongs.length} tracks found)`);
+        console.log("\x1b[36m-------------------------------------------------------------------------\x1b[0m");
     }
 
-    // Playlist Render
-    console.log(`${b}║${reset}  ${t.dim}PLAYLIST (${filteredSongs.length} TRACKS):${reset}${" ".repeat(46)} ${b}║${reset}`);
+    console.log("\x1b[90mPLAYLIST:\x1b[0m");
     if (filteredSongs.length === 0) {
-        console.log(`${b}║${reset}    ${t.dim}No tracks matched your search query.${reset}${" ".repeat(28)} ${b}║${reset}`);
+        console.log("   \x1b[90m(No songs found)\x1b[0m");
     } else {
         filteredSongs.forEach((song, idx) => {
             const cleanName = cleanSongTitle(song);
-            const truncated = cleanName.length > 42 ? cleanName.substring(0, 39) + "..." : cleanName.padEnd(42);
             const numTag = idx < 9 ? `[${idx + 1}]` : "   ";
 
             if (idx === currentIndex) {
                 const isPlayingThis = idx === playingIndex && currentSongProcess;
-                const icon = isPlayingThis ? (isPaused ? "⏸ " : "▶ ") : "👉";
-                console.log(`${b}║${reset} ${t.highlight}${numTag} ${icon} ${t.primary}${truncated}${reset} ${t.accent}⭐ SELECTED${reset} ${b}║${reset}`);
+                const statusTag = isPlayingThis ? (isPaused ? "\x1b[33m[PAUSED]\x1b[0m" : "\x1b[32m[PLAYING]\x1b[0m") : "";
+                console.log(` > \x1b[1m\x1b[36m${numTag} ${cleanName}\x1b[0m ${statusTag}`);
             } else if (idx === playingIndex && currentSongProcess) {
-                console.log(`${b}║${reset} ${t.dim}${numTag} 🎵 ${reset}${t.accent}${truncated}${reset} ${t.dim}(Playing)${reset}  ${b}║${reset}`);
+                console.log(`   \x1b[32m${numTag} ${cleanName} (Now Playing)\x1b[0m`);
             } else {
-                console.log(`${b}║${reset} ${t.dim}${numTag}    ${truncated}${reset}            ${b}║${reset}`);
+                console.log(`   \x1b[90m${numTag}\x1b[0m ${cleanName}`);
             }
         });
     }
 
-    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
+    console.log("\x1b[36m-------------------------------------------------------------------------\x1b[0m");
 
-    // Now Playing Dashboard & Audio Visualizer
     if (playingIndex !== -1 && currentSongProcess && filteredSongs[playingIndex]) {
-        const frames = isPaused ? PAUSED_FRAME : DANCE_FRAMES[currentTime % DANCE_FRAMES.length];
-        const viz = isPaused ? "  ░░░░░░░░░░░░ PAUSED ░░░░░░░░░░░░  " : `  ${t.accent}${VISUALIZER_FRAMES[currentTime % VISUALIZER_FRAMES.length].join("  ")}${reset}  `;
-        
-        console.log(`${b}║${reset}  ${t.dim}DYNAMIC AUDIO STAGE & VISUALIZER:${reset}${" ".repeat(34)} ${b}║${reset}`);
-        frames.forEach(line => {
-            console.log(`${b}║${reset}  ${line.padEnd(69)} ${b}║${reset}`);
-        });
-        console.log(`${b}║${reset}${viz}${" ".repeat(28)} ${b}║${reset}`);
-        console.log(`${b}╟───────────────────────────────────────────────────────────────────────────╢${reset}`);
-
-        const width = 34;
+        const width = 30;
         const percent = currentDuration > 0 ? currentTime / currentDuration : 0;
         const filled = Math.min(width, Math.floor(width * percent));
         const bar = "█".repeat(filled) + "░".repeat(width - filled);
-        const statusText = isPaused ? "\x1b[33m⏸ PAUSED\x1b[0m" : "\x1b[32m▶ PLAYING\x1b[0m";
+        const statusText = isPaused ? "\x1b[33mPAUSED\x1b[0m" : "\x1b[32mPLAYING\x1b[0m";
         const currentTitle = cleanSongTitle(filteredSongs[playingIndex]);
-        const shortTitle = currentTitle.length > 30 ? currentTitle.substring(0, 27) + "..." : currentTitle.padEnd(30);
 
-        console.log(`${b}║${reset}  Track   : ${t.primary}${shortTitle}${reset} | Status: ${statusText.padEnd(18)} ${b}║${reset}`);
-        console.log(`${b}║${reset}  Progress: ${t.accent}[${bar}]${reset} ${Math.floor(percent * 100).toString().padStart(3)}% (${formatTime(currentTime)} / ${formatTime(currentDuration)}) ${b}║${reset}`);
-        
+        console.log(`Status   : ${statusText}`);
+        console.log(`Playing  : \x1b[1m\x1b[35m${currentTitle}\x1b[0m`);
+        console.log(`Progress : [\x1b[32m${bar}\x1b[0m] ${Math.floor(percent * 100)}% (${formatTime(currentTime)} / ${formatTime(currentDuration)})`);
         if (seekFeedback) {
-            console.log(`${b}║${reset}  ${seekFeedback.padEnd(69)} ${b}║${reset}`);
+            console.log(seekFeedback);
         }
     } else {
-        console.log(`${b}║${reset}  ${t.dim}STATUS: STOPPED. Select a track using ↑/↓ or 1-9 and press ENTER.${reset}   ${b}║${reset}`);
+        console.log("Status   : \x1b[90mStopped\x1b[0m");
+        console.log("Select any song with ↑/↓ or 1-9 and press ENTER to play.");
     }
 
-    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
-    console.log(`${b}║${reset} ${t.dim}[↑/↓] Nav  [Enter] Play  [Space] Pause  [n/p] Next/Prev  [+] Vol  [/] Search${reset} ${b}║${reset}`);
-    console.log(`${b}╚═══════════════════════════════════════════════════════════════════════════╝${reset}`);
-}
-
-function renderHelpTab(t, b, reset) {
-    console.log(`${b}║${reset}  ${t.highlight}📖 CONTROLS & SHORTCUTS GUIDE:${reset}${" ".repeat(40)} ${b}║${reset}`);
-    console.log(`${b}║${reset}                                                                           ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}ENTER${reset}      : Play highlighted song                               ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}SPACE${reset}      : Pause / Resume playback                             ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}n / p${reset}      : Skip to Next / Previous track                       ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}+ / -${reset}      : Increase / Decrease Volume (10% step)               ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}m${reset}          : Toggle Mute / Unmute                                ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}l / s${reset}      : Toggle Loop Mode / Shuffle Mode                     ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}t${reset}          : Switch Color Theme (4 neon presets)                 ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}/${reset}          : Live Search Mode (Type to filter playlist)          ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}1 - 9${reset}      : Quick Jump & Play track index                       ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}h${reset}          : Toggle this Help Menu / Main Player View            ${b}║${reset}`);
-    console.log(`${b}║${reset}   • ${t.primary}Ctrl + C${reset}   : Stop music and exit player                          ${b}║${reset}`);
-    console.log(`${b}║${reset}                                                                           ${b}║${reset}`);
-    console.log(`${b}╠═══════════════════════════════════════════════════════════════════════════╣${reset}`);
-    console.log(`${b}║${reset}  ${t.accent}Press 'h' or 'ESC' to return to the player...${reset}${" ".repeat(28)} ${b}║${reset}`);
-    console.log(`${b}╚═══════════════════════════════════════════════════════════════════════════╝${reset}`);
+    console.log("\x1b[36m-------------------------------------------------------------------------\x1b[0m");
+    console.log("\x1b[90mCONTROLS:\x1b[0m");
+    console.log(" ↑/↓    : Navigate Selection     | Enter : Play Selected Song");
+    console.log(" Space  : Pause / Resume Audio   | n / p : Skip to Next / Previous Track");
+    console.log(" + / -  : Volume Up / Down       | m     : Toggle Mute");
+    console.log(" l / s  : Loop Mode / Shuffle    | /     : Search Songs");
+    console.log(" 1 - 9  : Quick Direct Play      | ← / → : Seek 10 Seconds");
+    console.log(" Ctrl+C : Exit Player");
+    console.log("\x1b[36m=========================================================================\x1b[0m");
 }
 
 function playSong(songPath) {
@@ -392,30 +301,17 @@ listenKeys((key, extra) => {
 
     if (songs.length === 0) return;
 
-    if (key === "CHAR" && (extra === "h" || extra === "H")) {
-        activeTab = activeTab === "HELP" ? "PLAYER" : "HELP";
+    if (key === "SEARCH") {
+        searchMode = true;
         renderUI();
         return;
     }
 
     if (key === "ESC") {
-        if (activeTab === "HELP") {
-            activeTab = "PLAYER";
-            renderUI();
-            return;
-        }
         if (searchQuery) {
             searchQuery = "";
             applySearchFilter();
         }
-        return;
-    }
-
-    if (activeTab === "HELP") return;
-
-    if (key === "SEARCH") {
-        searchMode = true;
-        renderUI();
         return;
     }
 
@@ -502,15 +398,10 @@ listenKeys((key, extra) => {
         if (playingIndex !== -1 && currentSongProcess) playCurrentSong();
         else renderUI();
     }
-    if (key === "THEME") {
-        const idx = THEME_KEYS.indexOf(currentTheme);
-        currentTheme = THEME_KEYS[(idx + 1) % THEME_KEYS.length];
-        renderUI();
-    }
     if (key === "RIGHT") {
         if (playingIndex !== -1 && currentSongProcess) {
             currentTime = Math.min(currentDuration, currentTime + 10);
-            seekFeedback = "   \x1b[38;5;226m⚡ Seeked +10s (Visual Jump) ⚡\x1b[0m";
+            seekFeedback = "   \x1b[33m⚡ Seeked +10s ⚡\x1b[0m";
             setTimeout(() => {
                 seekFeedback = "";
                 renderUI();
@@ -521,7 +412,7 @@ listenKeys((key, extra) => {
     if (key === "LEFT") {
         if (playingIndex !== -1 && currentSongProcess) {
             currentTime = Math.max(0, currentTime - 10);
-            seekFeedback = "   \x1b[38;5;226m⚡ Seeked -10s (Visual Jump) ⚡\x1b[0m";
+            seekFeedback = "   \x1b[33m⚡ Seeked -10s ⚡\x1b[0m";
             setTimeout(() => {
                 seekFeedback = "";
                 renderUI();
