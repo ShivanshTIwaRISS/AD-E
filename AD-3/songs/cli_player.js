@@ -21,11 +21,15 @@ let loopMode = "OFF";
 let shuffle = false;
 let volume = 80;
 let muted = false;
+let speed = 1.0;
 let searchMode = false;
 let searchQuery = "";
 let notification = "";
 let notifTimer = null;
 let frame = 0;
+
+const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0, 3.0];
+const SPEED_LABELS = { 0.25: "0.25x 🐢", 0.5: "0.5x 🐌", 1.0: "1x ▶", 1.5: "1.5x ⚡", 2.0: "2x 🚀", 3.0: "3x 🔥" };
 
 // ─── Animation frames (clean note bars) ───────────────────────────────────────
 const BARS = [
@@ -70,7 +74,8 @@ function draw() {
     const volStr = muted ? `${R}MUTED${X}` : `${G}VOL ${volume}%${X}`;
     const loopStr = loopMode === "SINGLE" ? `${Y}🔂 ONE${X}` : loopMode === "ALL" ? `${Y}🔁 ALL${X}` : `${D}LOOP OFF${X}`;
     const shufStr = shuffle ? `${Y}🔀 ON${X}` : `${D}SHUF OFF${X}`;
-    out(`${C}│${X}  ${title}   ${loopStr}  ${shufStr}  ${volStr}  ${C}│${X}`);
+    const spdStr = speed === 1.0 ? `${D}1x${X}` : speed > 1 ? `${G}${SPEED_LABELS[speed]}${X}` : `${Y}${SPEED_LABELS[speed]}${X}`;
+    out(`${C}│${X}  ${title}   ${loopStr}  ${shufStr}  ${spdStr}  ${volStr}  ${C}│${X}`);
     out(`${C}├${LINE}┤${X}`);
 
     // Search bar
@@ -81,7 +86,7 @@ function draw() {
     }
 
     // Playlist
-    out(`${C}│${X}  ${D}PLAYLIST  (↑/↓ navigate · Enter play · n/p next/prev · / search)${X}  ${C}│${X}`);
+    out(`${C}│${X}  ${D}PLAYLIST  (↑/↓ navigate · Enter play · n/p next/prev · ← /→ seek 5s · f speed · / search)${X}  ${C}│${X}`);
     out(`${C}│${X}${C}│${X}`);
 
     if (filtered.length === 0) {
@@ -137,7 +142,7 @@ function draw() {
     }
 
     out(`${C}├${LINE}┤${X}`);
-    out(`${C}│${X}  ${D}[Space] Pause  [n/p] Next/Prev  [+/-] Vol  [m] Mute  [l] Loop  [s] Shuffle  [/] Search  [Ctrl+C] Exit${X}`);
+    out(`${C}│${X}  ${D}[Space] Pause  [←/→] -/+5s  [f] Speed  [n/p] Next/Prev  [+/-] Vol  [m] Mute  [l] Loop  [s] Shuffle  [/] Search  [q] Quit${X}`);
     out(`${C}└${LINE}┘${X}`);
 }
 
@@ -156,7 +161,27 @@ function stopSong() {
     frame = 0;
 }
 
-function playSong(idx) {
+// spawnPlayer: if startAt > 0, pipe audio from byte offset via tail | afplay -
+// afplay -t is a DURATION CAP (not a start offset), so we must NOT use it for seeking.
+function spawnPlayer(songPath, startAt) {
+    const vol = muted ? 0 : volume / 100;
+    const volStr  = String(vol);
+    const rateStr = String(speed);
+
+    if (startAt > 0 && duration > 0) {
+        try {
+            const stat = fs.statSync(songPath);
+            const byteOffset = Math.max(0, Math.floor((startAt / duration) * stat.size));
+            // tail -c +N outputs from byte N (1-indexed) to EOF; pipe to afplay reading stdin
+            const cmd = `tail -c +${byteOffset + 1} "${songPath}" | afplay -r ${rateStr} -v ${volStr} -`;
+            return spawn("sh", ["-c", cmd]);
+        } catch (_) { /* fall through to normal play */ }
+    }
+
+    return spawn("afplay", ["-v", volStr, "-r", rateStr, songPath]);
+}
+
+function playSong(idx, startAt) {
     if (idx < 0 || idx >= filtered.length) return;
 
     // Kill any existing process first, synchronously
@@ -170,14 +195,13 @@ function playSong(idx) {
     cursorIdx = idx;
     playingIdx = idx;
     paused = false;
-    elapsed = 0;
+    elapsed = startAt || 0;
     frame = 0;
 
     const songPath = path.join(SONGS_DIR, filtered[idx]);
-    duration = parseMp3Duration(songPath);
+    if (!startAt) duration = parseMp3Duration(songPath);
 
-    const vol = muted ? 0 : volume / 100;
-    player = spawn("afplay", ["-v", String(vol), songPath]);
+    player = spawnPlayer(songPath, startAt || 0);
 
     player.on("error", () => {
         player = null;
@@ -201,6 +225,41 @@ function playSong(idx) {
         draw();
     }, 1000);
 
+    draw();
+}
+
+function seekTo(newElapsed) {
+    if (!player || playingIdx === -1) return;
+    const idx       = playingIdx;
+    const target    = Math.max(0, Math.min(duration, newElapsed));
+    const wasPaused = paused;
+
+    player.kill("SIGKILL");
+    player = null;
+    clearInterval(ticker);
+    ticker = null;
+
+    elapsed = target;
+    paused  = false;
+
+    const songPath = path.join(SONGS_DIR, filtered[idx]);
+    player = spawnPlayer(songPath, target);
+
+    player.on("error", () => { player = null; draw(); });
+    player.on("close", (code, signal) => {
+        if (signal === "SIGKILL") return;
+        player = null;
+        clearInterval(ticker);
+        ticker = null;
+        handleSongEnd();
+    });
+
+    ticker = setInterval(() => {
+        if (!paused) { elapsed++; frame++; if (elapsed > duration) elapsed = duration; }
+        draw();
+    }, 1000);
+
+    if (wasPaused) { player.kill("SIGSTOP"); paused = true; }
     draw();
 }
 
@@ -270,45 +329,55 @@ function prevSong() {
     playSong(prev);
 }
 
-function setVolume(v) {
-    volume = Math.max(0, Math.min(100, v));
-    muted = false;
-    // Restart with new volume if playing — kill old, spawn new at same seek offset
-    if (player) {
-        const wasPlaying = !paused;
-        const savedElapsed = elapsed;
-        const savedDuration = duration;
-        const savedIdx = playingIdx;
+function restartPlayerInPlace() {
+    if (!player || playingIdx === -1) return;
+    const idx = playingIdx;
+    const savedElapsed = elapsed;
+    const savedDuration = duration;
+    const wasPaused = paused;
 
-        player.kill("SIGKILL");
+    player.kill("SIGKILL");
+    player = null;
+    clearInterval(ticker);
+    ticker = null;
+
+    elapsed = savedElapsed;
+    duration = savedDuration;
+    paused = false;
+
+    const songPath = path.join(SONGS_DIR, filtered[idx]);
+    player = spawnPlayer(songPath, savedElapsed);
+
+    player.on("error", () => { player = null; draw(); });
+    player.on("close", (code, signal) => {
+        if (signal === "SIGKILL") return;
         player = null;
         clearInterval(ticker);
         ticker = null;
+        handleSongEnd();
+    });
 
-        const songPath = path.join(SONGS_DIR, filtered[savedIdx]);
-        player = spawn("afplay", ["-v", String(volume / 100), songPath]);
+    ticker = setInterval(() => {
+        if (!paused) { elapsed++; frame++; if (elapsed > duration) elapsed = duration; }
+        draw();
+    }, 1000);
 
-        player.on("error", () => { player = null; draw(); });
-        player.on("close", (code, signal) => {
-            if (signal === "SIGKILL") return;
-            player = null;
-            clearInterval(ticker);
-            ticker = null;
-            handleSongEnd();
-        });
+    if (wasPaused) { player.kill("SIGSTOP"); paused = true; }
+}
 
-        elapsed = savedElapsed;
-        duration = savedDuration;
-        paused = !wasPlaying;
-
-        ticker = setInterval(() => {
-            if (!paused) { elapsed++; frame++; if (elapsed > duration) elapsed = duration; }
-            draw();
-        }, 1000);
-
-        if (paused) player.kill("SIGSTOP");
-    }
+function setVolume(v) {
+    volume = Math.max(0, Math.min(100, v));
+    muted = false;
+    if (player) restartPlayerInPlace();
     notify(`Volume: ${volume}%`);
+    draw();
+}
+
+function cycleSpeed() {
+    const idx = SPEEDS.indexOf(speed);
+    speed = SPEEDS[(idx + 1) % SPEEDS.length];
+    if (player) restartPlayerInPlace();
+    notify(`Speed: ${SPEED_LABELS[speed]}`);
     draw();
 }
 
@@ -430,8 +499,14 @@ listenKeys((key, arg) => {
         const i = arg - 1;
         if (i >= 0 && i < filtered.length) playSong(i);
     } else if (key === "LEFT") {
-        if (player) { elapsed = Math.max(0, elapsed - 10); notify("⏪ -10s"); draw(); }
+        if (player) { seekTo(elapsed - 5); notify("⏪ -5s"); }
     } else if (key === "RIGHT") {
-        if (player) { elapsed = Math.min(duration, elapsed + 10); notify("⏩ +10s"); draw(); }
+        if (player) { seekTo(elapsed + 5); notify("⏩ +5s"); }
+    } else if (key === "SPEED") {
+        cycleSpeed();
+    } else if (key === "QUIT") {
+        if (player) player.kill("SIGKILL");
+        process.stdout.write("\x1b[?25h\n");
+        process.exit(0);
     }
 });

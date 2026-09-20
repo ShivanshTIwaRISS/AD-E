@@ -24,7 +24,9 @@ module.exports = function listenKeys(callback) {
         if (key === "+" || key === "=") { callback("VOL_UP");  return; }
         if (key === "-" || key === "_") { callback("VOL_DOWN");return; }
         if (key === "m" || key === "M") { callback("MUTE");    return; }
+        if (key === "f" || key === "F") { callback("SPEED");   return; }
         if (key === "/")                { callback("SEARCH");  return; }
+        if (key === "q" || key === "Q") { callback("QUIT");    return; }
         if (key >= "1" && key <= "9")  { callback("NUM", parseInt(key, 10)); return; }
         callback("CHAR", key);
     });
